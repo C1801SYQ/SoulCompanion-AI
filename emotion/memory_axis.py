@@ -16,7 +16,10 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from config import DATABASE_PATH
+try:
+    from config import DATABASE_PATH
+except ImportError:
+    DATABASE_PATH = "data/emotional_db.sqlite"
 from emotion.models import EmotionRecord, EmotionState, EmotionTrend
 
 logger = logging.getLogger("MemoryAxis")
