@@ -313,8 +313,14 @@ async function updateParentPanel() {
 async function updateSystemStatus() {
     const data = await fetchJSON('/api/system/status');
     const dot = document.getElementById('system-status');
-    if (data && data.status === 'running') {
+    if (data && (data.status === 'running' || data.status === 'standalone')) {
         dot.classList.remove('offline');
+        // Update title with bridge status
+        if (data.bridge && data.bridge.connected) {
+            dot.title = '桥接模式 - 实时数据';
+        } else {
+            dot.title = '独立模式 - 演示数据';
+        }
     } else {
         dot.classList.add('offline');
     }
