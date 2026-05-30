@@ -159,7 +159,7 @@ templates = Jinja2Templates(directory=templates_dir) if os.path.exists(templates
 async def dashboard(request: Request):
     """Serve the main dashboard page."""
     if templates:
-        return templates.TemplateResponse("dashboard.html", {"request": request})
+        return templates.TemplateResponse(request, "dashboard.html")
     return HTMLResponse("<h1>小予情绪智能仪表板</h1><p>Templates not found. Use /docs for API.</p>")
 
 
