@@ -46,7 +46,7 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 - [ ] H2: config.py vs core/memory.py 配置不一致
 - [ ] H3: web_ui.py update_ui() 阻塞主线程
 - [ ] H4: speech_engine.py 线程安全
-- [ ] H5: 多处空except
+- [x] H5: vision_engine.py空except → 改为except Exception (R4)
 - [ ] M1: 零测试覆盖
 
 ### Risk Zones
