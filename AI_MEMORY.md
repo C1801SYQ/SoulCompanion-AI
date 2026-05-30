@@ -41,7 +41,7 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 - [ ] C1b: ⚠️ 已泄露的 Key 需要用户手动轮换
 - [x] C2: main.py _trigger_brain 变量res未定义 → 删除try外重复块 (R2)
 - [x] C3: main.py 重复执行res.status_code==200 → 同上修复 (R2)
-- [ ] C4: reports/report_generator.py SQL注入
+- [x] C4: reports/report_generator.py SQL注入 → 参数化查询 (R3)
 - [ ] H1: 5个死模块未清理
 - [ ] H2: config.py vs core/memory.py 配置不一致
 - [ ] H3: web_ui.py update_ui() 阻塞主线程
@@ -53,7 +53,8 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 
 - ~~main.py _trigger_brain: 变量作用域bug~~ → 已修复 (R2)
 - ~~test1.py: API Key泄露~~ → 已修复 (R1)
-- reports/report_generator.py: SQL注入 → R3目标
+- ~~reports/report_generator.py: SQL注入~~ → 已修复 (R3)
+- web_ui.py: update_ui阻塞主线程 + 线程安全 → R4目标
 
 ### Round History
 
@@ -61,4 +62,5 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 |-------|------|-----|--------|
 | R1 | security | 移除test1.py硬编码API Key+代理 | ✅ DONE |
 | R2 | fix | 修复main.py _trigger_brain NameError+重复写入 | ✅ DONE |
-| R3 | security | 修复reports/report_generator.py SQL注入 | PENDING |
+| R3 | security | 修复reports/report_generator.py SQL注入 | ✅ DONE |
+| R4 | reliability | 修复空except+线程安全问题 | PENDING |
