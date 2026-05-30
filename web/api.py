@@ -1,6 +1,12 @@
 """
 web/api.py - FastAPI REST API for the Emotion Dashboard
 
+Dual-mode operation:
+  1. Standalone: Creates its own module instances (for development)
+  2. Bridge mode: Uses injected EmotionBridge (for production via launcher)
+
+Set bridge via: set_bridge(bridge_instance) before starting uvicorn.
+
 Provides endpoints for:
 - /api/emotion/current  - Current emotion state
 - /api/emotion/history  - Emotion history records
@@ -9,6 +15,7 @@ Provides endpoints for:
 - /api/behavior/command - Latest behavior command
 - /api/parent/report    - Weekly parent report
 - /api/parent/report.md - Parent report as Markdown
+- /api/bridge/status    - Bridge integration status
 - /api/system/status    - System health check
 - /api/skill/*          - Skill-driven UI generation
 """
@@ -29,13 +36,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-from emotion.fusion_engine import FusionEngine
-from emotion.memory_axis import MemoryAxis
-from emotion.behavior_sync import BehaviorSync
-from emotion.embodied_engine import EmbodiedEngine
-from emotion.intervention import InterventionEngine
-from emotion.models import EmotionState
-
 app = FastAPI(
     title="小予情绪智能仪表板",
     description="SoulCompanion AI - ASD儿童多模态情绪智能监控系统",
@@ -51,48 +51,95 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Module Instances (lazy-initialized) ───────────────────────────────
+# ─── Bridge Integration ──────────────────────────────────────────────
+# When a bridge is injected, all endpoints read from the bridge's shared state.
+# When no bridge, endpoints create standalone module instances.
 
-_memory_axis: Optional[MemoryAxis] = None
-_fusion_engine: Optional[FusionEngine] = None
-_behavior_sync: Optional[BehaviorSync] = None
-_embodied_engine: Optional[EmbodiedEngine] = None
-_intervention_engine: Optional[InterventionEngine] = None
+_bridge = None  # Optional[EmotionBridge]
 
 
-def _get_memory_axis() -> MemoryAxis:
+def set_bridge(bridge):
+    """
+    Inject an EmotionBridge instance for integrated mode.
+    Call this BEFORE starting uvicorn.
+
+    Args:
+        bridge: EmotionBridge instance from emotion.bridge
+    """
+    global _bridge
+    _bridge = bridge
+
+
+def _has_bridge() -> bool:
+    """Check if a bridge is available."""
+    return _bridge is not None
+
+
+# ─── Standalone Module Instances (fallback when no bridge) ────────────
+
+_memory_axis = None
+_fusion_engine = None
+_behavior_sync = None
+_embodied_engine = None
+_intervention_engine = None
+
+
+def _get_memory_axis():
     global _memory_axis
     if _memory_axis is None:
+        from emotion.memory_axis import MemoryAxis
         _memory_axis = MemoryAxis()
     return _memory_axis
 
 
-def _get_fusion_engine() -> FusionEngine:
+def _get_fusion_engine():
     global _fusion_engine
     if _fusion_engine is None:
+        from emotion.fusion_engine import FusionEngine
         _fusion_engine = FusionEngine(memory_axis=_get_memory_axis())
     return _fusion_engine
 
 
-def _get_behavior_sync() -> BehaviorSync:
+def _get_behavior_sync():
     global _behavior_sync
     if _behavior_sync is None:
+        from emotion.behavior_sync import BehaviorSync
         _behavior_sync = BehaviorSync()
     return _behavior_sync
 
 
-def _get_embodied_engine() -> EmbodiedEngine:
+def _get_embodied_engine():
     global _embodied_engine
     if _embodied_engine is None:
+        from emotion.embodied_engine import EmbodiedEngine
         _embodied_engine = EmbodiedEngine()
     return _embodied_engine
 
 
-def _get_intervention_engine() -> InterventionEngine:
+def _get_intervention_engine():
     global _intervention_engine
     if _intervention_engine is None:
+        from emotion.intervention import InterventionEngine
         _intervention_engine = InterventionEngine(memory_axis=_get_memory_axis())
     return _intervention_engine
+
+
+# ─── Helper: get modules from bridge or standalone ───────────────────
+
+def _memory():
+    return _bridge.get_memory() if _has_bridge() else _get_memory_axis()
+
+def _fusion():
+    return _bridge.get_fusion_engine() if _has_bridge() else _get_fusion_engine()
+
+def _behavior():
+    return _bridge.get_behavior_sync() if _has_bridge() else _get_behavior_sync()
+
+def _embodied():
+    return _bridge.get_embodied_engine() if _has_bridge() else _get_embodied_engine()
+
+def _intervention():
+    return _bridge.get_intervention_engine() if _has_bridge() else _get_intervention_engine()
 
 
 # ─── Static Files & Templates ─────────────────────────────────────────
@@ -121,8 +168,12 @@ async def dashboard(request: Request):
 @app.get("/api/emotion/current")
 async def get_current_emotion():
     """Get the current fused emotion state."""
-    engine = _get_fusion_engine()
-    state = engine.get_last_state()
+    if _has_bridge():
+        snap = _bridge.get_snapshot()
+        state = snap.emotion
+    else:
+        state = _fusion().get_last_state()
+
     return {
         "category": state.category.value if hasattr(state.category, 'value') else str(state.category),
         "confidence": state.confidence,
@@ -140,8 +191,7 @@ async def get_current_emotion():
 @app.get("/api/emotion/history")
 async def get_emotion_history(limit: int = 50, offset: int = 0):
     """Get emotion history records."""
-    memory = _get_memory_axis()
-    records = memory.get_records(limit=limit, offset=offset)
+    records = _memory().get_records(limit=limit, offset=offset)
     return {
         "records": [
             {
@@ -162,8 +212,7 @@ async def get_emotion_history(limit: int = 50, offset: int = 0):
 @app.get("/api/emotion/trends")
 async def get_emotion_trends(period: str = "daily"):
     """Get emotion trend analysis."""
-    memory = _get_memory_axis()
-    trend = memory.get_trend_analysis(period=period)
+    trend = _memory().get_trend_analysis(period=period)
     return {
         "period": trend.period,
         "dominant_emotion": trend.dominant_emotion,
@@ -179,24 +228,21 @@ async def get_emotion_trends(period: str = "daily"):
 @app.get("/api/emotion/periodicity")
 async def get_emotion_periodicity(lookback_days: int = 30):
     """Get emotion periodicity patterns."""
-    memory = _get_memory_axis()
-    patterns = memory.detect_periodicity(lookback_days=lookback_days)
+    patterns = _memory().detect_periodicity(lookback_days=lookback_days)
     return {"patterns": patterns, "lookback_days": lookback_days}
 
 
 @app.get("/api/emotion/counts")
 async def get_emotion_counts(days: int = 7):
     """Get emotion category counts."""
-    memory = _get_memory_axis()
-    counts = memory.get_emotion_counts(days=days)
+    counts = _memory().get_emotion_counts(days=days)
     return {"counts": counts, "days": days}
 
 
 @app.get("/api/emotion/valence-series")
 async def get_valence_series(days: int = 7):
     """Get timestamped valence series for charting."""
-    memory = _get_memory_axis()
-    series = memory.get_valence_series(days=days)
+    series = _memory().get_valence_series(days=days)
     return {
         "series": [{"timestamp": ts, "valence": v} for ts, v in series],
         "days": days,
@@ -208,15 +254,20 @@ async def get_valence_series(days: int = 7):
 @app.get("/api/behavior/status")
 async def get_behavior_status():
     """Get current behavior engine status."""
-    engine = _get_embodied_engine()
-    return engine.get_status()
+    if _has_bridge():
+        return _embodied().get_status()
+    return _embodied().get_status()
 
 
 @app.get("/api/behavior/command")
 async def get_behavior_command():
     """Get the latest behavior command."""
-    sync = _get_behavior_sync()
-    cmd = sync.get_last_command()
+    if _has_bridge():
+        snap = _bridge.get_snapshot()
+        cmd = snap.behavior
+    else:
+        cmd = _behavior().get_last_command()
+
     return {
         "actions": [a.value for a in cmd.actions],
         "speech_rate": cmd.speech_rate,
@@ -233,8 +284,7 @@ async def get_behavior_command():
 @app.get("/api/parent/report")
 async def get_parent_report(days: int = 7):
     """Get parent report as JSON."""
-    engine = _get_intervention_engine()
-    report = engine.generate_parent_report(days=days)
+    report = _intervention().generate_parent_report(days=days)
     return {
         "period_start": report.period_start,
         "period_end": report.period_end,
@@ -256,8 +306,7 @@ async def get_parent_report(days: int = 7):
 @app.get("/api/parent/report.md", response_class=PlainTextResponse)
 async def get_parent_report_markdown(days: int = 7):
     """Get parent report as Markdown."""
-    engine = _get_intervention_engine()
-    return engine.generate_parent_report_markdown(days=days)
+    return _intervention().generate_parent_report_markdown(days=days)
 
 
 # ─── Intervention API ────────────────────────────────────────────────
@@ -265,8 +314,19 @@ async def get_parent_report_markdown(days: int = 7):
 @app.get("/api/intervention/last")
 async def get_last_intervention():
     """Get the last intervention plan."""
-    engine = _get_intervention_engine()
-    plan = engine.get_last_plan()
+    if _has_bridge():
+        snap = _bridge.get_snapshot()
+        return {
+            "intervention_type": snap.intervention_type,
+            "guidance_text": snap.guidance_text,
+            "guidance_style": snap.guidance_style,
+            "parent_alert": snap.parent_alert,
+            "parent_note": "",
+            "duration_seconds": 0,
+            "metadata": {},
+        }
+
+    plan = _intervention().get_last_plan()
     return {
         "intervention_type": plan.intervention_type.value if hasattr(plan.intervention_type, 'value') else str(plan.intervention_type),
         "guidance_text": plan.guidance_text,
@@ -283,12 +343,42 @@ async def get_last_intervention():
 @app.get("/api/risk/triggers")
 async def get_risk_triggers(window_minutes: int = 60):
     """Get current risk triggers."""
-    memory = _get_memory_axis()
-    triggers = memory.check_risk_triggers(window_minutes=window_minutes)
+    if _has_bridge():
+        snap = _bridge.get_snapshot()
+        return {
+            "triggers": snap.risk_triggers,
+            "has_risk": snap.has_risk,
+            "window_minutes": window_minutes,
+        }
+
+    triggers = _memory().check_risk_triggers(window_minutes=window_minutes)
     return {
         "triggers": triggers,
         "has_risk": len(triggers) > 0,
         "window_minutes": window_minutes,
+    }
+
+
+# ─── Bridge Status API ───────────────────────────────────────────────
+
+@app.get("/api/bridge/status")
+async def get_bridge_status():
+    """Get the emotion bridge integration status."""
+    if _has_bridge():
+        snap = _bridge.get_snapshot()
+        return {
+            "connected": True,
+            "is_running": snap.is_running,
+            "cycle_count": snap.cycle_count,
+            "last_update": snap.last_update,
+            "attention_level": snap.attention_level,
+        }
+    return {
+        "connected": False,
+        "is_running": False,
+        "cycle_count": 0,
+        "last_update": "",
+        "attention_level": 0.0,
     }
 
 
@@ -297,15 +387,22 @@ async def get_risk_triggers(window_minutes: int = 60):
 @app.get("/api/system/status")
 async def get_system_status():
     """Get overall system health status."""
+    bridge_connected = _has_bridge()
+    bridge_running = _bridge.is_running if bridge_connected else False
+
     return {
-        "status": "running",
+        "status": "running" if (bridge_connected and bridge_running) else "standalone",
         "timestamp": datetime.now().isoformat(),
+        "bridge": {
+            "connected": bridge_connected,
+            "running": bridge_running,
+        },
         "modules": {
-            "fusion_engine": _fusion_engine is not None,
-            "memory_axis": _memory_axis is not None,
-            "behavior_sync": _behavior_sync is not None,
-            "embodied_engine": _embodied_engine is not None,
-            "intervention_engine": _intervention_engine is not None,
+            "fusion_engine": True,
+            "memory_axis": True,
+            "behavior_sync": True,
+            "embodied_engine": True,
+            "intervention_engine": True,
         },
         "version": "1.0.0",
     }
