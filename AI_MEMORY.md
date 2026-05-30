@@ -1,0 +1,62 @@
+# AI TechLead Memory
+
+## System Baseline (2026-05-30)
+
+**Project**: SoulCompanion_AI - ASD儿童智能陪伴干预机器人
+**Language**: Python 3.10-3.12
+**Entry**: main.py (SoulCompanionRobot)
+**UI**: web_ui.py (Streamlit)
+
+### Architecture Map
+
+```
+main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
+     │      modules/speech_engine.py   (Vosk STT + Wav2Vec2 SER)
+     │      utils/audio_player.py      (pyttsx3 TTS)
+     └──→ Ollama API (gemma4:e4b)      (LLM决策)
+```
+
+### Module Status
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| main.py | ACTIVE | 入口+主循环+决策，含bugs |
+| config.py | ACTIVE | 配置，与memory.py不一致 |
+| web_ui.py | ACTIVE | Streamlit UI，有阻塞bug |
+| modules/vision_engine.py | ACTIVE | 视觉引擎 |
+| modules/speech_engine.py | ACTIVE | 语音引擎，线程安全问题 |
+| utils/audio_player.py | ACTIVE | TTS播放 |
+| core/brain.py | DEAD | RobotBrain从未被导入 |
+| core/llm_engine.py | DEAD | 与main._trigger_brain重复 |
+| core/prompt_template.py | DEAD | 未被使用 |
+| core/memory.py | DEAD | EmotionMemory未被使用 |
+| core/hardware.py | DEAD | RobotBody未被使用 |
+| modules/voice_engine.py | DEAD | VoiceEngine未被使用 |
+| modules/sensor_sim.py | DEAD | get_mock_sensor_data未使用 |
+| hardware/controllers/actuators.py | DEAD | RobotActuator未使用 |
+
+### Known Issues
+
+- [x] ~~(none fixed yet)~~
+- [ ] C1: test1.py 硬编码 Google API Key
+- [ ] C2: main.py:144 _trigger_brain 变量 res 未定义风险
+- [ ] C3: main.py 重复执行 res.status_code==200 块导致chat_history重复
+- [ ] C4: reports/report_generator.py SQL注入
+- [ ] H1: 5个死模块未清理
+- [ ] H2: config.py vs core/memory.py 配置不一致
+- [ ] H3: web_ui.py update_ui() 阻塞主线程
+- [ ] H4: speech_engine.py 线程安全
+- [ ] H5: 多处空except
+- [ ] M1: 零测试覆盖
+
+### Risk Zones
+
+- main.py _trigger_brain: 变量作用域bug，运行时会crash
+- test1.py: 泄露API Key
+- reports/report_generator.py: SQL注入
+
+### Round History
+
+| Round | Type | Fix | Status |
+|-------|------|-----|--------|
+| R1 | security | 移除test1.py硬编码API Key | PENDING |
