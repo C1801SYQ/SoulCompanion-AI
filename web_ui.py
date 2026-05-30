@@ -74,24 +74,17 @@ def update_ui():
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             video_placeholder.image(rgb_frame, use_container_width=True)
 
-        # C. 渲染视觉提示卡片 (Requirement 2)
-        if robot_state.active_hint:
-            hint_placeholder.info(f"💡 引导提示：{robot_state.active_hint}")
-        else:
-            hint_placeholder.empty()
-
-        # D. 更新数据指标
+        # C. 更新数据指标
         emo_metric.metric("面部情绪", v_state.get("emotion", "neutral"))
         att_metric.metric("注意力丢失", f"{v_state.get('attention_loss_time', 0)}s")
 
-        # E. 实时同步对话历史
-        # 这里建议你在 main.py 的 RobotBrain 或交互逻辑里维护一个 history 列表
-        # 简单演示：获取机器人最后一次说话的内容
+        # D. 实时同步对话历史
         with chat_placeholder.container():
             for msg in robot_state.chat_history[-10:]:  # 显示最近10条
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
 
+        # E. 渲染视觉提示卡片
         if robot_state.active_hint:
             hint_placeholder.warning(f"💡 引导：{robot_state.active_hint}")
         else:
