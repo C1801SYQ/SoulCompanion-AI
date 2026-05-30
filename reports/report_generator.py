@@ -17,7 +17,7 @@ class ReportGenerator:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 # 获取今天的对话记录
-                cursor = conn.execute(f"SELECT time, user_input, emotion, score FROM logs WHERE time LIKE '{today}%'")
+                cursor = conn.execute("SELECT time, user_input, emotion, score FROM logs WHERE time LIKE ?", (f"{today}%",))
                 records = cursor.fetchall()
         except sqlite3.OperationalError:
             print("❌ 数据库未找到，请先让小予和孩子聊聊天哦！")
