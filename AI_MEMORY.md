@@ -44,7 +44,8 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 - [x] C4: reports/report_generator.py SQL注入 → 参数化查询 (R3)
 - [ ] H1: 5个死模块未清理
 - [ ] H2: config.py vs core/memory.py 配置不一致
-- [ ] H3: web_ui.py update_ui() 阻塞主线程
+- [x] H3: web_ui.py update_ui() 阻塞主线程 → 改为daemon线程 (R6)
+  - ⚠️ 已知限制：Streamlit非线程安全，完整修复需后续迭代
 - [x] H4: speech_engine.py 线程安全 → 添加threading.Lock (R5)
 - [x] H5: vision_engine.py空except → 改为except Exception (R4)
 - [ ] M1: 零测试覆盖
