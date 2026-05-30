@@ -11,3 +11,8 @@ model/
 reports/output/
 test1.py
 .env
+Cachenpm/
+.npm/
+node_modules/
+emotion_state.json
+emotion_cloud_data.json
