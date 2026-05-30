@@ -20,20 +20,20 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| main.py | ACTIVE | 入口+主循环+决策，含bugs |
-| config.py | ACTIVE | 配置，与memory.py不一致 |
-| web_ui.py | ACTIVE | Streamlit UI，有阻塞bug |
+| main.py | ACTIVE | 入口+主循环+LLM决策 |
+| config.py | ACTIVE | 全局配置 |
+| web_ui.py | ACTIVE | Streamlit UI |
 | modules/vision_engine.py | ACTIVE | 视觉引擎 |
-| modules/speech_engine.py | ACTIVE | 语音引擎，线程安全问题 |
+| modules/speech_engine.py | ACTIVE | 语音引擎 |
 | utils/audio_player.py | ACTIVE | TTS播放 |
-| core/brain.py | DEAD | RobotBrain从未被导入 |
-| core/llm_engine.py | DEAD | 与main._trigger_brain重复 |
-| core/prompt_template.py | DEAD | 未被使用 |
-| core/memory.py | DEAD | EmotionMemory未被使用 |
-| core/hardware.py | DEAD | RobotBody未被使用 |
-| modules/voice_engine.py | DEAD | VoiceEngine未被使用 |
-| modules/sensor_sim.py | DEAD | get_mock_sensor_data未使用 |
-| hardware/controllers/actuators.py | DEAD | RobotActuator未使用 |
+| core/memory.py | UNUSED | 未被导入但保留(有实际功能) |
+| hardware/controllers/actuators.py | UNUSED | 未被导入但保留(未来硬件) |
+| ~~core/brain.py~~ | REMOVED | 死代码 R8 |
+| ~~core/llm_engine.py~~ | REMOVED | 死代码 R8 |
+| ~~core/prompt_template.py~~ | REMOVED | 死代码 R8 |
+| ~~core/hardware.py~~ | REMOVED | 死代码 R8 |
+| ~~modules/voice_engine.py~~ | REMOVED | 死代码 R8 |
+| ~~modules/sensor_sim.py~~ | REMOVED | 死代码 R8 |
 
 ### Known Issues
 
@@ -42,7 +42,7 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 - [x] C2: main.py _trigger_brain 变量res未定义 → 删除try外重复块 (R2)
 - [x] C3: main.py 重复执行res.status_code==200 → 同上修复 (R2)
 - [x] C4: reports/report_generator.py SQL注入 → 参数化查询 (R3)
-- [ ] H1: 5个死模块未清理
+- [x] H1: 6个死模块 → 已删除194行 (R8)
 - [x] H2: config.py vs core/memory.py 配置不一致 → 统一从config读取 (R7)
 - [x] H3: web_ui.py update_ui() 阻塞主线程 → 改为daemon线程 (R6)
   - ⚠️ 已知限制：Streamlit非线程安全，完整修复需后续迭代
