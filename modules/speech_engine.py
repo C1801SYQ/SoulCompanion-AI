@@ -14,6 +14,7 @@ class SpeechEngine:
     def __init__(self, vosk_path="model", ser_model_path="models/ser_model"):
         self.is_running = True
         self.current_state = {"text": "", "emotion": "neutral"}
+        self._lock = threading.Lock()
 
         # 1. 初始化 VOSK (内容识别)
         print(f"🎙️ [听觉引擎] 正在加载 VOSK 模型: {vosk_path}...")
@@ -112,10 +113,11 @@ class SpeechEngine:
                         print(f"📊 [Wav2Vec2] 语气分析结果: {final_emotion} (置信度: {ser_result[0]['score']:.2f})")
 
                         # 更新状态，供主程序读取
-                        self.current_state = {
-                            "text": text,
-                            "emotion": final_emotion
-                        }
+                        with self._lock:
+                            self.current_state = {
+                                "text": text,
+                                "emotion": final_emotion
+                            }
 
             except queue.Empty:
                 continue
@@ -124,10 +126,11 @@ class SpeechEngine:
 
     def get_latest_text(self):
         """返回识别结果，并清空当前状态以防重复读取"""
-        if self.current_state["text"]:
-            result = self.current_state.copy()
-            self.current_state["text"] = ""  # 读取后清空
-            return result
+        with self._lock:
+            if self.current_state["text"]:
+                result = self.current_state.copy()
+                self.current_state["text"] = ""  # 读取后清空
+                return result
         return None
 
     def stop(self):
