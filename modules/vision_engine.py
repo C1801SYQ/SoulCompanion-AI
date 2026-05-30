@@ -79,8 +79,8 @@ class VisionEngine:
                             "neutral": "neutral"
                         }
                         new_state["emotion"] = mapping.get(raw_emotion, "neutral")
-                    except:
-                        pass
+                    except Exception:
+                        pass  # 单帧推理失败不影响整体，跳过
             else:
                 new_state["face_detected"] = False
                 new_state["attention_loss_time"] = round(time.time() - self.last_face_time, 1)
