@@ -100,5 +100,5 @@ def update_ui():
         time.sleep(0.1)
 
 
-# 启动更新逻辑
-update_ui()
+# 启动更新逻辑（后台线程，避免阻塞 Streamlit 主线程渲染）
+threading.Thread(target=update_ui, daemon=True).start()
