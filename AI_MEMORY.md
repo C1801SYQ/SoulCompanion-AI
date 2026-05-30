@@ -39,8 +39,8 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 
 - [x] C1: test1.py 硬编码 Google API Key → 改为环境变量读取 (R1)
 - [ ] C1b: ⚠️ 已泄露的 Key 需要用户手动轮换
-- [ ] C2: main.py:144 _trigger_brain 变量 res 未定义风险
-- [ ] C3: main.py 重复执行 res.status_code==200 块导致chat_history重复
+- [x] C2: main.py _trigger_brain 变量res未定义 → 删除try外重复块 (R2)
+- [x] C3: main.py 重复执行res.status_code==200 → 同上修复 (R2)
 - [ ] C4: reports/report_generator.py SQL注入
 - [ ] H1: 5个死模块未清理
 - [ ] H2: config.py vs core/memory.py 配置不一致
@@ -51,8 +51,8 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 
 ### Risk Zones
 
-- main.py _trigger_brain: 变量作用域bug，运行时会crash → R2目标
-- ~~test1.py: API Key泄露~~ → 已修复
+- ~~main.py _trigger_brain: 变量作用域bug~~ → 已修复 (R2)
+- ~~test1.py: API Key泄露~~ → 已修复 (R1)
 - reports/report_generator.py: SQL注入 → R3目标
 
 ### Round History
@@ -60,4 +60,5 @@ main.py ──→ modules/vision_engine.py  (OpenCV+ONNX 人脸/情绪)
 | Round | Type | Fix | Status |
 |-------|------|-----|--------|
 | R1 | security | 移除test1.py硬编码API Key+代理 | ✅ DONE |
-| R2 | fix | 修复main.py _trigger_brain运行时crash | PENDING |
+| R2 | fix | 修复main.py _trigger_brain NameError+重复写入 | ✅ DONE |
+| R3 | security | 修复reports/report_generator.py SQL注入 | PENDING |
