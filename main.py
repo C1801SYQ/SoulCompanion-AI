@@ -141,17 +141,6 @@ class SoulCompanionRobot:
         except Exception as e:
             self.logger.error(f"决策引擎异常 (请检查Ollama是否启动): {e}")
 
-        if res.status_code == 200:
-            reply = res.json().get("response", "").strip()
-
-            # 【关键修复】：将对话存入 state，UI 才能读到
-            # 如果是语音识别到的，用户内容在 _handle_adaptive_interaction 里存
-            # 如果是系统提醒（如注意提醒），可以在这里存一条
-            self.state.chat_history.append({"role": "assistant", "content": reply})
-
-            self.speaker.speak(reply)
-            self.last_interaction_time = time.time()
-
     def shutdown(self):
         self.logger.info("⚙️ 正在释放资源...")
         self.vision.stop()
