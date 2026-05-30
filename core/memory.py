@@ -1,10 +1,11 @@
 import sqlite3
 from datetime import datetime
+from config import DATABASE_PATH
 
 
 class EmotionMemory:
-    def __init__(self, db_path='data/emotional_db.sqlite'):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        self.db_path = db_path or DATABASE_PATH
         self._init_db()
 
     def _init_db(self):

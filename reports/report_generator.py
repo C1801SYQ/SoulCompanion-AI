@@ -1,12 +1,17 @@
 # SoulCompanion_AI/reports/report_generator.py
 import sqlite3
 import os
+import sys
 from datetime import datetime
+
+# 确保能从项目根目录导入 config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from config import DATABASE_PATH
 
 
 class ReportGenerator:
-    def __init__(self, db_path='data/emotional_db.sqlite'):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        self.db_path = db_path or DATABASE_PATH
         # 确保输出目录存在
         os.makedirs("reports/output", exist_ok=True)
 
