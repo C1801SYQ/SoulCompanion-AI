@@ -1,0 +1,10 @@
+numpy<2.0.0
+opencv-python
+vosk
+pyaudio
+pyttsx3
+transformers==4.44.2
+tf-keras
+torch
+torchvision
+torchaudio

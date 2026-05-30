@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.idea/
+.vscode/
+*.sqlite
+models/ser_model/
+model/
+*.onnx
+*.xml
+reports/output/
+test1.py
+.env
