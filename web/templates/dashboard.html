@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小予情绪智能仪表板 | SoulCompanion AI</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="dashboard-header">
+        <div class="header-left">
+            <h1>💠 小予情绪智能仪表板</h1>
+            <span class="subtitle">SoulCompanion AI - ASD儿童多模态情绪监控</span>
+        </div>
+        <div class="header-right">
+            <span class="status-dot" id="system-status"></span>
+            <span class="timestamp" id="current-time"></span>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Grid -->
+    <main class="dashboard-grid">
+        <!-- Panel 1: Emotion Live -->
+        <section class="panel panel-emotion" id="panel-emotion">
+            <div class="panel-header">
+                <h2>🧠 实时情绪状态</h2>
+                <span class="refresh-indicator" id="emotion-refresh"></span>
+            </div>
+            <div class="panel-body">
+                <div class="emotion-badge" id="emotion-badge">
+                    <span class="emotion-icon" id="emotion-icon">😐</span>
+                    <span class="emotion-label" id="emotion-label">检测中...</span>
+                </div>
+                <div class="emotion-metrics">
+                    <div class="metric">
+                        <label>置信度</label>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="confidence-bar" style="width: 50%"></div>
+                        </div>
+                        <span id="confidence-value">0.50</span>
+                    </div>
+                    <div class="metric">
+                        <label>效价 (Valence)</label>
+                        <div class="valence-bar">
+                            <div class="valence-indicator" id="valence-indicator"></div>
+                        </div>
+                        <span id="valence-value">0.00</span>
+                    </div>
+                    <div class="metric">
+                        <label>唤醒度 (Arousal)</label>
+                        <div class="progress-bar">
+                            <div class="progress-fill arousal" id="arousal-bar" style="width: 50%"></div>
+                        </div>
+                        <span id="arousal-value">0.50</span>
+                    </div>
+                </div>
+                <div class="emotion-sources">
+                    <span class="source-tag" id="vision-source">👁️ 视觉: --</span>
+                    <span class="source-tag" id="speech-source">🎤 语音: --</span>
+                    <span class="source-tag" id="env-source">🌡️ 环境: --</span>
+                </div>
+                <div class="emotion-cause" id="emotion-cause"></div>
+            </div>
+        </section>
+
+        <!-- Panel 2: Behavior Monitor -->
+        <section class="panel panel-behavior" id="panel-behavior">
+            <div class="panel-header">
+                <h2>🤖 行为同步状态</h2>
+            </div>
+            <div class="panel-body">
+                <div class="behavior-actions" id="behavior-actions">
+                    <div class="action-item">等待行为数据...</div>
+                </div>
+                <div class="behavior-params">
+                    <div class="param">
+                        <label>LED</label>
+                        <div class="led-indicator" id="led-indicator"></div>
+                        <span id="led-info">--</span>
+                    </div>
+                    <div class="param">
+                        <label>语速</label>
+                        <div class="progress-bar small">
+                            <div class="progress-fill speech" id="speech-rate-bar" style="width: 100%"></div>
+                        </div>
+                        <span id="speech-rate-value">1.0x</span>
+                    </div>
+                    <div class="param">
+                        <label>动作速度</label>
+                        <div class="progress-bar small">
+                            <div class="progress-fill servo" id="servo-speed-bar" style="width: 50%"></div>
+                        </div>
+                        <span id="servo-speed-value">0.5</span>
+                    </div>
+                </div>
+                <div class="behavior-reason" id="behavior-reason"></div>
+            </div>
+        </section>
+
+        <!-- Panel 3: Emotion Timeline -->
+        <section class="panel panel-timeline" id="panel-timeline">
+            <div class="panel-header">
+                <h2>📈 情绪趋势</h2>
+                <div class="time-range-selector">
+                    <button class="range-btn active" data-days="1">1天</button>
+                    <button class="range-btn" data-days="7">7天</button>
+                    <button class="range-btn" data-days="30">30天</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="chart-container">
+                    <canvas id="valence-chart"></canvas>
+                </div>
+                <div class="trend-summary" id="trend-summary">
+                    <div class="trend-item">
+                        <label>主导情绪</label>
+                        <span id="trend-dominant">--</span>
+                    </div>
+                    <div class="trend-item">
+                        <label>平均效价</label>
+                        <span id="trend-valence">--</span>
+                    </div>
+                    <div class="trend-item">
+                        <label>稳定性</label>
+                        <span id="trend-stability">--</span>
+                    </div>
+                    <div class="trend-item">
+                        <label>记录数</label>
+                        <span id="trend-count">--</span>
+                    </div>
+                </div>
+                <div class="emotion-distribution" id="emotion-distribution"></div>
+            </div>
+        </section>
+
+        <!-- Panel 4: Parent Insight -->
+        <section class="panel panel-parent" id="panel-parent">
+            <div class="panel-header">
+                <h2>👨‍👩‍👦 家长洞察</h2>
+            </div>
+            <div class="panel-body">
+                <div class="health-score-container">
+                    <div class="health-score-ring" id="health-score-ring">
+                        <svg viewBox="0 0 120 120">
+                            <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+                            <circle class="ring-fill" cx="60" cy="60" r="52" id="health-ring"></circle>
+                        </svg>
+                        <div class="health-score-text" id="health-score-text">--</div>
+                    </div>
+                    <div class="health-label">情绪健康指数</div>
+                </div>
+                <div class="parent-summary" id="parent-summary">加载中...</div>
+                <div class="parent-sections">
+                    <div class="parent-section">
+                        <h3>✨ 本周亮点</h3>
+                        <ul id="parent-highlights"><li>加载中...</li></ul>
+                    </div>
+                    <div class="parent-section">
+                        <h3>⚠️ 需要关注</h3>
+                        <ul id="parent-concerns"><li>加载中...</li></ul>
+                    </div>
+                    <div class="parent-section">
+                        <h3>💡 建议</h3>
+                        <ul id="parent-suggestions"><li>加载中...</li></ul>
+                    </div>
+                </div>
+                <div class="risk-alert" id="risk-alert" style="display:none">
+                    <span class="risk-icon">🚨</span>
+                    <span class="risk-text" id="risk-text"></span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="dashboard-footer">
+        <span>SoulCompanion AI v1.0.0 | ASD儿童智能陪伴干预机器人</span>
+        <span>实时刷新中 | <a href="/docs" target="_blank">API文档</a></span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

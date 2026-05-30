@@ -1,0 +1,581 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SoulCompanion AI - Emotion Dashboard Styles
+   ASD-friendly: calm colors, clear hierarchy, low visual noise
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Reset & Base ─────────────────────────────────────────────── */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --primary: #4CAF50;
+    --primary-light: #81C784;
+    --secondary: #2196F3;
+    --secondary-light: #64B5F6;
+    --accent: #FF9800;
+    --danger: #EF5350;
+    --warning: #FFB74D;
+    --success: #66BB6A;
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --surface-alt: #f8f9fa;
+    --text: #333333;
+    --text-light: #666666;
+    --text-muted: #999999;
+    --border: #e0e0e0;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-hover: 0 4px 16px rgba(0,0,0,0.12);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --transition: 0.3s ease;
+
+    /* Emotion colors */
+    --emo-happy: #FFD700;
+    --emo-calm: #87CEEB;
+    --emo-neutral: #4CAF50;
+    --emo-anxious: #FF9800;
+    --emo-sad: #7986CB;
+    --emo-angry: #EF5350;
+    --emo-fearful: #B39DDB;
+    --emo-distressed: #FF5722;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+/* ─── Header ───────────────────────────────────────────────────── */
+.dashboard-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: var(--shadow);
+}
+
+.header-left h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.header-left .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--success);
+    animation: pulse 2s infinite;
+}
+
+.status-dot.offline {
+    background: var(--danger);
+    animation: none;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.timestamp {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ─── Dashboard Grid ───────────────────────────────────────────── */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+    padding: 16px 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+/* ─── Panel Base ───────────────────────────────────────────────── */
+.panel {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: box-shadow var(--transition);
+}
+
+.panel:hover {
+    box-shadow: var(--shadow-hover);
+}
+
+.panel-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.panel-body {
+    padding: 20px;
+}
+
+/* ─── Panel Grid Placement ─────────────────────────────────────── */
+.panel-emotion {
+    grid-column: span 6;
+}
+
+.panel-behavior {
+    grid-column: span 6;
+}
+
+.panel-timeline {
+    grid-column: span 8;
+}
+
+.panel-parent {
+    grid-column: span 4;
+}
+
+/* ─── Emotion Panel ────────────────────────────────────────────── */
+.emotion-badge {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+}
+
+.emotion-icon {
+    font-size: 3rem;
+    line-height: 1;
+}
+
+.emotion-label {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.emotion-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.metric {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.metric label {
+    min-width: 100px;
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+.progress-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-bar.small {
+    height: 6px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 4px;
+    transition: width var(--transition);
+}
+
+.progress-fill.arousal {
+    background: var(--accent);
+}
+
+.progress-fill.speech {
+    background: var(--secondary);
+}
+
+.progress-fill.servo {
+    background: var(--primary-light);
+}
+
+.valence-bar {
+    flex: 1;
+    height: 8px;
+    background: linear-gradient(to right, var(--danger), var(--border), var(--success));
+    border-radius: 4px;
+    position: relative;
+}
+
+.valence-indicator {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    background: var(--text);
+    border-radius: 50%;
+    transform: translateX(-50%);
+    transition: left var(--transition);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+.emotion-sources {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.source-tag {
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    background: var(--surface-alt);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+}
+
+.emotion-cause {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    font-style: italic;
+    padding: 8px 12px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+    display: none;
+}
+
+.emotion-cause:not(:empty) {
+    display: block;
+}
+
+/* ─── Behavior Panel ───────────────────────────────────────────── */
+.behavior-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.action-item {
+    padding: 6px 14px;
+    background: var(--primary-light);
+    color: white;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.behavior-params {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.param {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.param label {
+    min-width: 80px;
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+.led-indicator {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid var(--border);
+    transition: background var(--transition);
+}
+
+.behavior-reason {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+}
+
+/* ─── Timeline Panel ───────────────────────────────────────────── */
+.time-range-selector {
+    display: flex;
+    gap: 4px;
+}
+
+.range-btn {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 16px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.range-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.range-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.chart-container {
+    height: 200px;
+    margin-bottom: 16px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+    position: relative;
+    overflow: hidden;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.trend-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.trend-item {
+    text-align: center;
+    padding: 12px 8px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+}
+
+.trend-item label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.trend-item span {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.emotion-distribution {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.dist-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    background: var(--surface-alt);
+    border-radius: 16px;
+}
+
+.dist-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+/* ─── Parent Insight Panel ─────────────────────────────────────── */
+.health-score-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.health-score-ring {
+    position: relative;
+    width: 120px;
+    height: 120px;
+}
+
+.health-score-ring svg {
+    transform: rotate(-90deg);
+}
+
+.ring-bg {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 8;
+}
+
+.ring-fill {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 326.7;
+    stroke-dashoffset: 326.7;
+    transition: stroke-dashoffset 1s ease;
+}
+
+.health-score-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.health-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+.parent-summary {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+    line-height: 1.5;
+}
+
+.parent-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.parent-section h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text);
+}
+
+.parent-section ul {
+    list-style: none;
+    padding: 0;
+}
+
+.parent-section li {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    padding: 6px 12px;
+    background: var(--surface-alt);
+    border-radius: var(--radius-sm);
+    margin-bottom: 4px;
+}
+
+.risk-alert {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #FFF3E0;
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.risk-icon {
+    font-size: 1.2rem;
+}
+
+.risk-text {
+    font-size: 0.85rem;
+    color: #E65100;
+}
+
+/* ─── Footer ───────────────────────────────────────────────────── */
+.dashboard-footer {
+    padding: 12px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.dashboard-footer a {
+    color: var(--secondary);
+    text-decoration: none;
+}
+
+.dashboard-footer a:hover {
+    text-decoration: underline;
+}
+
+/* ─── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+    .panel-emotion,
+    .panel-behavior,
+    .panel-timeline,
+    .panel-parent {
+        grid-column: span 12;
+    }
+
+    .trend-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-header {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .dashboard-grid {
+        padding: 8px 12px;
+    }
+
+    .panel-body {
+        padding: 12px;
+    }
+}
