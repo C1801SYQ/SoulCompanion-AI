@@ -1,0 +1,8 @@
+# SoulCompanion AI - 开发/测试依赖
+# 安装：pip install -r requirements.txt -r requirements-dev.txt
+#
+# 运行测试：pytest -q
+# 说明：tests/ 只覆盖 emotion/ 纯逻辑模块（无需摄像头 / 麦克风 / 模型文件），
+#       因此即使没有装完整运行时依赖也能跑通。
+
+pytest>=7.0

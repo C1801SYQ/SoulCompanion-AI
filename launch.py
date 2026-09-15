@@ -102,7 +102,9 @@ def launch(
         # Define getters that read from the robot's engines
         if robot:
             get_vision = robot.vision.get_latest_state
-            get_speech = robot.speech.get_latest_text
+            # 非破坏性读取：主循环仍需消费语音事件，桥接器只"窥视"，
+            # 否则两个消费者会互相抢事件（先读到的一方把事件吃掉）。
+            get_speech = robot.speech.peek_latest_text
         else:
             # No robot: provide dummy getters for standalone dashboard
             def get_vision():

@@ -1,0 +1,1405 @@
+diff --git a/.gitignore b/.gitignore
+index ae48cb8..74e069e 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,6 +3,10 @@ __pycache__/
+ *.pyo
+ .idea/
+ .vscode/
++.pytest_cache/
++.venv/
++.venv-test/
++venv/
+ *.sqlite
+ models/ser_model/
+ model/
+diff --git a/AI_MEMORY.md b/AI_MEMORY.md
+index 4db60a8..c318cc3 100644
+--- a/AI_MEMORY.md
++++ b/AI_MEMORY.md
+@@ -1,11 +1,13 @@
+ # AI TechLead Memory
+ 
+-## System Baseline (2026-05-30)
++## System Baseline (2026-09-13, R11)
+ 
+ **Project**: SoulCompanion_AI - ASD儿童智能陪伴干预机器人
+ **Language**: Python 3.10-3.12
+-**Entry**: main.py (SoulCompanionRobot)
++**Entry**: main.py (SoulCompanionRobot) / launch.py (三合一启动器)
+ **UI**: web_ui.py (Streamlit) + web/api.py (FastAPI) + streamlit_dashboard.py
++**Tests**: tests/ (pytest, **132 passed**, 零重依赖 — 只 import emotion/* 与 config)
++**Config**: config.py 为**唯一**配置源（支持环境变量覆盖）
+ 
+ ### Architecture Map
+ 
+@@ -21,6 +23,7 @@ emotion/ (NEW - 情绪智能核心)
+      ├── behavior_sync.py    ← EmotionState → BehaviorCommand
+      ├── embodied_engine.py  ← BehaviorCommand → 硬件/模拟执行
+      ├── intervention.py     ← EmotionState → 干预计划 + 家长报告
++     ├── bridge.py           ← 非侵入式集成桥（后台线程跑完整管线）
+      └── models.py           ← 共享数据模型
+ 
+ web/ (NEW - Web Dashboard)
+@@ -28,6 +31,12 @@ web/ (NEW - Web Dashboard)
+      ├── app.py              ← 应用入口
+      ├── templates/dashboard.html ← 4-panel dashboard
+      └── static/{style.css, app.js} ← 前端资源
++
++tests/ (R11 - 单元测试)
++     ├── conftest.py         ← 项目根加入 sys.path
++     ├── test_fusion_engine.py / test_behavior_sync.py / test_intervention.py
++     ├── test_memory_axis.py / test_bridge.py / test_config.py
++     └── 运行: .venv-test/Scripts/python.exe -m pytest -q
+ ```
+ 
+ ### Module Status
+@@ -71,7 +80,16 @@ web/ (NEW - Web Dashboard)
+   - ⚠️ 已知限制：Streamlit非线程安全，完整修复需后续迭代
+ - [x] H4: speech_engine.py 线程安全 → 添加threading.Lock (R5)
+ - [x] H5: vision_engine.py空except → 改为except Exception (R4)
+-- [ ] M1: 零测试覆盖
++- [x] M1: 零测试覆盖 → tests/ 132 用例全绿 (R11)
++- [ ] C1b: ⚠️ 已泄露的 Key 需要用户手动轮换（需用户本人操作）
++
++### R11 遗留技术债（下一轮建议优先处理）
++
++- [ ] N-1 (P2): `behavior_sync.py` 硬编码注意力阈值 `0.3`，与 `intervention.ATTENTION_THRESHOLD_LOW` 重复 → 抽公共常量
++- [ ] N-2 (P3): `bridge.EmotionSnapshot.attention_level` 默认 `1.0`，与"视觉未知=0.5"约定自相矛盾 → 改为 `0.5`
++- [ ] N-3 (P3): `intervention._is_in_cooldown` 第 2/3 分支等价（`_last_urgency` 判断形同虚设）；`fusion_engine` ASD 规则里 `DISTRESSED` 分支不可达（`VISION_EMOTION_MAP` 永不产出 DISTRESSED）
++- [ ] 未覆盖：cv2/vosk/torch/pyaudio 未安装，视觉/语音/音频模块仅做 AST/语法级验证，未做实机采集验证
++- [ ] `readme2.0.md` 的删除尚未提交（工作区内为已删除状态）
+ 
+ ### Risk Zones
+ 
+@@ -100,7 +118,8 @@ Vision/Speech/Bio → FusionEngine → EmotionState
+ ```
+ 
+ #### Key Design Decisions
+-- **No main.py modification**: All new code in emotion/ and web/ packages
++- **R10 期间不改 main.py**: 新代码全部落在 emotion/ 与 web/ 包内
++- **R11 起允许最小化改动 main.py**: 删除重复 Config、对话历史裁剪、超时可配置（消除配置漂移的必要代价）
+ - **Hardware abstraction**: embodied_engine works with or without physical hardware
+ - **ASD-specific rules**: Never command, never criticize, always gentle
+ - **Skill-driven UI**: /api/skill/* endpoints generate UI configuration
+@@ -120,6 +139,21 @@ Vision/Speech/Bio → FusionEngine → EmotionState
+ | R8 | refactor | 删除6个死代码模块(-194行) | ✅ DONE |
+ | R9 | refactor | 清理未用导入+修复重复渲染 | ✅ DONE |
+ | R10 | feat | 情绪智能系统+Web仪表板+部署方案 | ✅ DONE |
++| R11 | fix/perf/security | 配置集中化+语音竞态+融合缺失模态+干预冷却安全+SQLite写放大+CORS+日志刷屏+日报回退链路+测试套件(132) | ✅ DONE |
++
++### R11 关键修复摘要（供后续轮次参考）
++
++| # | 问题 | 修复 |
++|---|------|------|
++| 1 | `main.py` 自带重复 `Config`；`config.py` 只有 2 行 | `config.py` 成为唯一配置源（env 覆盖 + 绝对 DATABASE_PATH） |
++| 2 | `RobotState.chat_history` 无界增长 | 新增 `push_history()` 裁剪至 `MAX_CHAT_HISTORY=200` |
++| 3 | **语音事件竞态**：`get_latest_text()` 破坏性读取，main 与 bridge 抢事件 | 新增非破坏性 `peek_latest_text()`（带 `seq`）；bridge 按 seq 去重 + 10s 新鲜度窗 |
++| 4 | **融合把"没人说话"当成一次真实 NEUTRAL 投票** | 缺失模态返回 `None` → 权重置零并重新归一化；无人脸时视觉视为缺失；单模态降权；白天仅 `hour` 不投票（第 2 轮补） |
++| 5 | **干预冷却挡掉安全关键干预** | 先算计划再判冷却；高紧急度（`urgency=high`）走独立 8s 窗口 |
++| 6 | **SQLite 写放大**：每 0.5s 写 1 行（约 17 万行/天） | `bridge._should_record()` 按 `(category, valence档位)` 去重 + 30s 心跳基线；WAL + busy_timeout + 自动建目录 |
++| 7 | CORS `["*"]` + `allow_credentials=True` 互斥且不安全；默认绑定 `0.0.0.0` | 从 `config.CORS_ORIGINS` 读取，通配模式强制 `credentials=False`；默认只绑 `127.0.0.1` |
++| 8 | `embodied_engine` 每 0.5s 刷多条 INFO + docstring 谎称起后台线程；日报只读没人写的 `logs` 表 | 即时派发模型 + 变更去重 + DEBUG 日志；`report_generator` 优先读 `emotion_records` 回退 `logs` |
++| 9 | 依赖清单残缺（`requirements.txt` 只有 `streamlit`；`launch.py` 引用的 `requirements-web.txt` 不存在） | 补齐 `requirements.txt` / `requirements-web.txt`（新建）/ `requirements-dev.txt`（新建） |
+ 
+ ### Deployment Quick Reference
+ 
+diff --git a/config.py b/config.py
+index 2e606ba..2ecb555 100644
+--- a/config.py
++++ b/config.py
+@@ -1,2 +1,68 @@
+-API_KEY = ''
+-DATABASE_PATH = 'data/emotional_db.sqlite'
+\ No newline at end of file
++"""
++config.py - 全局配置中心 (Single Source of Truth)
++
++所有运行时参数集中在此处，并支持通过环境变量覆盖，
++便于在开发机 / 部署机 / 演示环境之间切换而不改代码。
++
++环境变量一览：
++    SOULCOMPANION_DB            情绪数据库路径
++    SOULCOMPANION_API_KEY       保留字段（如需外部 API）
++    SOULCOMPANION_CORS_ORIGINS  允许跨域来源，逗号分隔；设为 * 表示放开（不携带凭证）
++    OLLAMA_URL                  Ollama 接口地址
++    OLLAMA_MODEL                使用的模型标签（需与 `ollama list` 一致）
++    OLLAMA_TIMEOUT              单次请求超时秒数
++    SOULCOMPANION_DASHBOARD_HOST / _PORT  仪表板默认监听地址
++"""
++from __future__ import annotations
++
++import os
++from dataclasses import dataclass
++
++# ─── Paths ────────────────────────────────────────────────────────────
++# 用绝对路径，避免因启动时工作目录不同而连到"另一个"数据库
++BASE_DIR = os.path.dirname(os.path.abspath(__file__))
++DATA_DIR = os.path.join(BASE_DIR, "data")
++
++DATABASE_PATH = os.environ.get(
++    "SOULCOMPANION_DB",
++    os.path.join(DATA_DIR, "emotional_db.sqlite"),
++)
++
++# 保留字段：本项目默认不出网，如无需要留空即可
++API_KEY = os.environ.get("SOULCOMPANION_API_KEY", "")
++
++# ─── Web / CORS ───────────────────────────────────────────────────────
++DASHBOARD_HOST = os.environ.get("SOULCOMPANION_DASHBOARD_HOST", "127.0.0.1")
++DASHBOARD_PORT = int(os.environ.get("SOULCOMPANION_DASHBOARD_PORT", "8000"))
++
++# 默认只放行本机来源。设为 "*" 时出于安全考虑会关闭凭证传递。
++CORS_ORIGINS = os.environ.get(
++    "SOULCOMPANION_CORS_ORIGINS",
++    "http://localhost:8000,http://127.0.0.1:8000",
++)
++
++# ─── Logging ──────────────────────────────────────────────────────────
++LOG_LEVEL = os.environ.get("SOULCOMPANION_LOG_LEVEL", "INFO").upper()
++
++
++@dataclass(frozen=True)
++class Config:
++    """运行时配置（供 main.py 等模块以对象形式访问）。"""
++
++    # Ollama LLM 决策后端
++    OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "gemma3n:e4b")
++    OLLAMA_URL: str = os.environ.get(
++        "OLLAMA_URL", "http://localhost:11434/api/generate"
++    )
++    OLLAMA_TIMEOUT: float = float(os.environ.get("OLLAMA_TIMEOUT", "60"))
++
++    # ASD 特化阈值 [满足需求3：友好交互]
++    ATTENTION_THRESHOLD: float = 8.0
++    REINFORCEMENT_INTERVAL: float = 30.0
++    SENSORY_FRIENDLY_VOLUME: float = 0.5
++
++    # 对话历史上限：防止长时间运行导致内存无界增长
++    MAX_CHAT_HISTORY: int = 200
++
++    # 情绪数据库
++    DATABASE_PATH: str = DATABASE_PATH
+diff --git a/emotion/bridge.py b/emotion/bridge.py
+index 616047a..360bf9e 100644
+--- a/emotion/bridge.py
++++ b/emotion/bridge.py
+@@ -10,7 +10,8 @@ Architecture:
+         │
+         ├── vision.get_latest_state() ──┐
+         │                                │
+-        └── speech.get_latest_text() ───┤
++        └── speech.peek_latest_text() ──┤  (非破坏性读取, 推荐)
++        └── speech.get_latest_text()  ──┘  (破坏性, 会与主循环抢事件)
+                                          ▼
+                               ┌──────────────────┐
+                               │   EmotionBridge   │ (background thread)
+@@ -28,7 +29,7 @@ Architecture:
+ Usage:
+     bridge = EmotionBridge(
+         get_vision_state=robot.vision.get_latest_state,
+-        get_speech_state=robot.speech.get_latest_text,
++        get_speech_state=robot.speech.peek_latest_text,  # 非破坏性，别用 get_*
+     )
+     bridge.start()  # Runs in background thread
+ 
+@@ -129,21 +130,37 @@ class EmotionBridge:
+         self._env_signals = env_signals or {}
+         self._cycle_interval = cycle_interval
+ 
+-        # ── Initialize emotion modules ──
++        # ── 初始化情绪模块 ──
+         self._memory = MemoryAxis(db_path=db_path)
+         self._fusion = FusionEngine(memory_axis=self._memory)
+         self._behavior = BehaviorSync()
+         self._embodied = EmbodiedEngine(hardware_available=hardware_available)
+         self._intervention = InterventionEngine(memory_axis=self._memory)
+ 
+-        # ── State ──
++        # ── 状态 ──
+         self._snapshot = EmotionSnapshot()
+         self._lock = threading.Lock()
+         self._running = False
+         self._thread: Optional[threading.Thread] = None
+         self._cycle_count = 0
+ 
+-        # ── Callbacks ──
++        # ── 记忆写入策略（抑制写放大）──
++        # 0.5s 一轮 = 每天约 17 万行，几天就能把 SQLite 撑爆。
++        # 策略：情绪类别变化 或 valence 跨越一个档位 → 立即记录；
++        #       否则每 _record_heartbeat 秒补一条基线，保证时间序列连续。
++        self._record_heartbeat = 30.0
++        self._valence_bucket = 0.2
++        self._last_record_signature: Optional[tuple] = None
++        self._last_record_time = 0.0
++
++        # ── 语音新鲜度 ──
++        # peek 接口是非破坏性的，同一句话会被反复读到；这里用 seq 去重，
++        # 并加一个时间窗，避免几分钟前的一句话持续主导当前情绪判断。
++        self._speech_freshness = 10.0
++        self._last_speech_seq: Optional[int] = None
++        self._last_speech_time = 0.0
++
++        # ── 回调 ──
+         self._on_intervention: Optional[Callable[[InterventionPlan], None]] = None
+         self._on_behavior: Optional[Callable[[BehaviorCommand], None]] = None
+ 
+@@ -233,13 +250,75 @@ class EmotionBridge:
+ 
+         logger.info("🔄 [桥接器] 情绪处理循环结束")
+ 
++    def _read_vision(self) -> Dict:
++        """安全读取视觉状态；getter 抛异常时返回空 dict 而不是中断整个周期。"""
++        try:
++            return self._get_vision() or {}
++        except Exception as e:
++            logger.debug(f"读取视觉状态失败: {e}")
++            return {}
++
++    def _read_speech(self) -> Optional[Dict]:
++        """
++        安全读取语音状态，并过滤掉已经不新鲜的旧语句。
++
++        - 若 getter 返回带 ``seq`` 的 dict（peek_latest_text），用 seq 去重，
++          同一句话只在 ``_speech_freshness`` 秒内参与融合；
++        - 若返回不带 ``seq`` 的旧格式，则保持原有行为（视为新鲜）。
++        """
++        try:
++            speech_state = self._get_speech()
++        except Exception as e:
++            logger.debug(f"读取语音状态失败: {e}")
++            return None
++
++        if not speech_state:
++            return None
++
++        seq = speech_state.get("seq")
++        if seq is None:
++            # 旧版 getter：无法去重，直接采信
++            return speech_state
++
++        now = time.time()
++        if seq != self._last_speech_seq:
++            self._last_speech_seq = seq
++            self._last_speech_time = now
++            return speech_state
++
++        if now - self._last_speech_time <= self._speech_freshness:
++            return speech_state
++        return None
++
++    def _should_record(self, state: EmotionState) -> bool:
++        """
++        决定本轮是否写入长期记忆。
++
++        去重条件：情绪类别 + valence 档位（默认 0.2 一档）。
++        变化时立即写入；无变化时每 ``_record_heartbeat`` 秒补一条基线。
++        """
++        now = time.time()
++        bucket = round(state.valence / self._valence_bucket)
++        signature = (state.category, bucket)
++
++        if signature != self._last_record_signature:
++            self._last_record_signature = signature
++            self._last_record_time = now
++            return True
++
++        if now - self._last_record_time >= self._record_heartbeat:
++            self._last_record_time = now
++            return True
++
++        return False
++
+     def _process_cycle(self) -> None:
+         """Single processing cycle: read → fuse → act → record."""
+         self._cycle_count += 1
+ 
+         # ── 1. Read sensor state ──
+-        vision_state = self._get_vision()
+-        speech_state = self._get_speech()
++        vision_state = self._read_vision()
++        speech_state = self._read_speech()
+ 
+         # Merge environment signals with dynamic data
+         env = dict(self._env_signals)
+@@ -252,9 +331,10 @@ class EmotionBridge:
+             env_signals=env,
+         )
+ 
+-        # ── 3. Record to memory ──
++        # ── 3. Record to memory (带去重/限频，避免写放大) ──
+         context = speech_state.get("text", "") if speech_state else ""
+-        self._memory.record(emotion_state, context=context, source_text=context)
++        if self._should_record(emotion_state):
++            self._memory.record(emotion_state, context=context, source_text=context)
+ 
+         # ── 4. Generate behavior command ──
+         behavior_cmd = self._behavior.sync(emotion_state)
+diff --git a/emotion/embodied_engine.py b/emotion/embodied_engine.py
+index 7c397b8..fe6483c 100644
+--- a/emotion/embodied_engine.py
++++ b/emotion/embodied_engine.py
+@@ -10,13 +10,15 @@ Executes BehaviorCommands as physical/virtual robot actions:
+ 
+ Hardware-abstracted: works with or without physical hardware.
+ Falls back to console logging when no hardware is present.
++
++说明：本引擎采用"即时派发"模型，不会为持续动作额外创建后台线程。
++持续类动作（心跳、呼吸灯）在硬件模式下由固件自行维持节律，
++模拟模式下仅输出日志用于联调。
+ """
+ from __future__ import annotations
+ 
+ import logging
+-import math
+ import threading
+-import time
+ from typing import Optional
+ 
+ from emotion.models import BehaviorAction, BehaviorCommand
+@@ -54,7 +56,7 @@ class EmbodiedEngine:
+         self.hardware_available = hardware_available
+         self._running = True
+         self._current_action: Optional[BehaviorAction] = None
+-        self._action_thread: Optional[threading.Thread] = None
++        self._last_signature: Optional[tuple] = None
+         self._lock = threading.Lock()
+ 
+         # Hardware interface (lazy-loaded)
+@@ -82,8 +84,8 @@ class EmbodiedEngine:
+         """
+         Execute a BehaviorCommand.
+ 
+-        Starts background threads for continuous actions (heartbeat, breathing)
+-        and executes discrete actions (head tilt, ear wiggle) immediately.
++        高优先级指令会先中断当前动作；随后逐条即时派发离散动作。
++        持续类动作（心跳/呼吸灯）由硬件层维持，这里不做动画循环。
+ 
+         Args:
+             command: BehaviorCommand to execute
+@@ -95,15 +97,31 @@ class EmbodiedEngine:
+         for action in command.actions:
+             self._dispatch_action(action, command)
+ 
+-        # Log the behavior for monitoring
+-        logger.info(
+-            f"🎬 [行为执行] {', '.join(a.value for a in command.actions)} "
+-            f"| LED={command.led_color} 亮度={command.led_brightness} "
+-            f"| 语速={command.speech_rate} | 原因: {command.reason}"
++        if command.actions:
++            self._current_action = command.actions[0]
++
++        # 桥接器每 0.5s 调一次，只在指令真正变化时输出 INFO，避免日志刷屏
++        signature = (
++            tuple(a.value for a in command.actions),
++            command.led_color,
++            round(command.led_brightness, 2),
++            round(command.speech_rate, 2),
++            command.reason,
+         )
++        if command.actions and signature != self._last_signature:
++            self._last_signature = signature
++            logger.info(
++                f"🎬 [行为执行] {', '.join(a.value for a in command.actions)} "
++                f"| LED={command.led_color} 亮度={command.led_brightness:.0%} "
++                f"| 语速={command.speech_rate} | 原因: {command.reason}"
++            )
+ 
+     def _dispatch_action(self, action: BehaviorAction, command: BehaviorCommand) -> None:
+         """Dispatch a single action to the appropriate handler."""
++        # 三种 LED 动作共用同一个处理器：具体的色温/亮度已经编码在
++        # command.led_color / led_brightness 里，无需重复实现。
++        led = lambda: self._led_control(command.led_color, command.led_brightness)  # noqa: E731
++
+         handlers = {
+             BehaviorAction.HEARTBEAT: self._heartbeat,
+             BehaviorAction.BREATHING_LED: self._breathing_led,
+@@ -113,9 +131,9 @@ class EmbodiedEngine:
+             BehaviorAction.EXCITED_VOICE: lambda: self._voice_modulation(command.speech_rate),
+             BehaviorAction.SLOW_MOTION: lambda: self._motion_control(command.servo_speed),
+             BehaviorAction.STILL: self._still_mode,
+-            BehaviorAction.LED_WARM: lambda: self._led_control(command.led_color, command.led_brightness),
+-            BehaviorAction.LED_COOL: lambda: self._led_control(command.led_color, command.led_brightness),
+-            BehaviorAction.LED_DIM: lambda: self._led_control(command.led_color, command.led_brightness),
++            BehaviorAction.LED_WARM: led,
++            BehaviorAction.LED_COOL: led,
++            BehaviorAction.LED_DIM: led,
+         }
+ 
+         handler = handlers.get(action)
+@@ -125,7 +143,7 @@ class EmbodiedEngine:
+             except Exception as e:
+                 logger.error(f"❌ [行为执行] {action.value} 失败: {e}")
+ 
+-    # ─── Continuous Actions (run in background threads) ───────────────
++    # ─── 动作实现（模拟模式走 DEBUG 日志，避免每轮刷屏）─────────────────
+ 
+     def _heartbeat(self) -> None:
+         """Simulate heartbeat with vibration motor pattern."""
+@@ -133,14 +151,14 @@ class EmbodiedEngine:
+             self._actuator.perform_action("心跳模拟")
+         else:
+             # Simulation: log heartbeat pattern
+-            logger.info("💓 [心跳] 72bpm 安抚节律启动")
++            logger.debug("💓 [心跳] 72bpm 安抚节律启动")
+ 
+     def _breathing_led(self) -> None:
+         """Start breathing LED pattern (slow sine wave brightness)."""
+         if self.hardware_available and self._actuator:
+             self._actuator.set_led("breathing")
+         else:
+-            logger.info("💡 [呼吸灯] 缓慢呼吸灯模式启动")
++            logger.debug("💡 [呼吸灯] 缓慢呼吸灯模式启动")
+ 
+     # ─── Discrete Actions ─────────────────────────────────────────────
+ 
+@@ -149,34 +167,34 @@ class EmbodiedEngine:
+         if self.hardware_available and self._actuator:
+             self._actuator.perform_action("动耳朵")
+         else:
+-            logger.info("👂 [耳朵] 可爱耳朵摆动")
++            logger.debug("👂 [耳朵] 可爱耳朵摆动")
+ 
+     def _head_tilt(self) -> None:
+         """Execute head tilt to show curiosity/engagement."""
+         if self.hardware_available and self._actuator:
+             self._actuator.perform_action("歪头15度")
+         else:
+-            logger.info("🤔 [头部] 好奇歪头 15°")
++            logger.debug("🤔 [头部] 好奇歪头 15°")
+ 
+     def _voice_modulation(self, rate: float) -> None:
+         """Modulate speech rate for emotional expression."""
+         # This is applied by the TTS engine via the command's speech_rate
+-        logger.info(f"🗣️ [语音] 语速调整至 {rate:.1f}x")
++        logger.debug(f"🗣️ [语音] 语速调整至 {rate:.1f}x")
+ 
+     def _motion_control(self, speed: float) -> None:
+         """Control overall motion speed."""
+-        logger.info(f"🦽 [运动] 动作速度调整至 {speed:.1f}")
++        logger.debug(f"🦽 [运动] 动作速度调整至 {speed:.1f}")
+ 
+     def _still_mode(self) -> None:
+         """Enter still mode - minimize all movement (reduce stimuli)."""
+-        logger.info("🧊 [静止] 进入静止模式，减少刺激")
++        logger.debug("🧊 [静止] 进入静止模式，减少刺激")
+ 
+     def _led_control(self, color: str, brightness: float) -> None:
+         """Set LED color and brightness."""
+         if self.hardware_available and self._actuator:
+             self._actuator.set_led(color)
+         else:
+-            logger.info(f"💡 [灯光] LED={color} 亮度={brightness:.0%}")
++            logger.debug(f"💡 [灯光] LED={color} 亮度={brightness:.0%}")
+ 
+     # ─── Utility ──────────────────────────────────────────────────────
+ 
+@@ -184,7 +202,7 @@ class EmbodiedEngine:
+         """Stop any currently running continuous actions."""
+         with self._lock:
+             self._current_action = None
+-        logger.info("⏹️ [行为] 停止当前动作 (高优先级中断)")
++        logger.debug("⏹️ [行为] 停止当前动作 (高优先级中断)")
+ 
+     def stop(self) -> None:
+         """Shutdown the embodied engine."""
+diff --git a/emotion/fusion_engine.py b/emotion/fusion_engine.py
+index 3d97169..76959c6 100644
+--- a/emotion/fusion_engine.py
++++ b/emotion/fusion_engine.py
+@@ -120,6 +120,8 @@ class FusionEngine:
+         env_signals = env_signals or {}
+ 
+         # ── 1. Parse individual modality signals ──
++        # 返回 None 表示该模态本轮"无有效信号"（不是"中性"！），
++        # 后续融合会将其权重置零并重新归一化。
+         v_emotion = self._parse_vision(vision_state)
+         s_emotion = self._parse_speech(speech_state)
+         e_emotion = self._parse_environment(env_signals)
+@@ -128,7 +130,7 @@ class FusionEngine:
+         attention = self._calc_attention(vision_state)
+ 
+         # ── 3. Weighted fusion ──
+-        fused_category, confidence = self._weighted_fuse(
++        fused_category, confidence, effective_weights = self._weighted_fuse(
+             v_emotion, s_emotion, e_emotion, attention
+         )
+ 
+@@ -153,12 +155,12 @@ class FusionEngine:
+             confidence=round(confidence, 3),
+             valence=round(valence, 3),
+             arousal=round(arousal, 3),
+-            vision_emotion=v_emotion.value if isinstance(v_emotion, EmotionCategory) else str(v_emotion),
+-            speech_emotion=s_emotion.value if isinstance(s_emotion, EmotionCategory) else str(s_emotion),
+-            environment_signal=e_emotion.value if isinstance(e_emotion, EmotionCategory) else str(e_emotion),
++            vision_emotion=self._label(v_emotion),
++            speech_emotion=self._label(s_emotion),
++            environment_signal=self._label(e_emotion),
+             emotional_cause=cause,
+             attention_level=round(attention, 3),
+-            source_weights=self.weights.copy(),
++            source_weights=effective_weights,
+         )
+ 
+         # ── 8. Update history ──
+@@ -179,36 +181,86 @@ class FusionEngine:
+ 
+     # ─── Private: Parsing ─────────────────────────────────────────────
+ 
+-    def _parse_vision(self, v_state: Dict) -> EmotionCategory:
+-        """Parse vision engine output into EmotionCategory."""
+-        raw = v_state.get("emotion", "neutral")
++    @staticmethod
++    def _label(emo: Optional[EmotionCategory]) -> str:
++        """把模态结果转成可展示的字符串；None 表示本轮无有效信号。"""
++        if emo is None:
++            return "unknown"
++        if isinstance(emo, EmotionCategory):
++            return emo.value
++        return str(emo)
++
++    def _parse_vision(self, v_state: Dict) -> Optional[EmotionCategory]:
++        """Parse vision engine output into EmotionCategory (None = 无有效信号)。"""
++        if not v_state:
++            return None
++        # 明确报告"没检测到人脸"时，面部情绪读数不可信，视为缺失
++        if v_state.get("face_detected") is False:
++            return None
++        raw = v_state.get("emotion")
++        if not raw:
++            return None
+         return VISION_EMOTION_MAP.get(raw, EmotionCategory.NEUTRAL)
+ 
+-    def _parse_speech(self, s_state: Dict) -> EmotionCategory:
+-        """Parse speech engine output into EmotionCategory."""
+-        raw = s_state.get("emotion", "neutral")
++    def _parse_speech(self, s_state: Optional[Dict]) -> Optional[EmotionCategory]:
++        """Parse speech engine output into EmotionCategory (None = 无人说话)。"""
++        if not s_state:
++            return None
++        raw = s_state.get("emotion")
++        if not raw:
++            return None
+         return SPEECH_EMOTION_MAP.get(raw, EmotionCategory.NEUTRAL)
+ 
+-    def _parse_environment(self, env: Dict) -> EmotionCategory:
+-        """Parse environment signals into EmotionCategory."""
+-        # Bio anxiety level
+-        anxiety = env.get("bio_anxiety", 0.0)
+-        if anxiety > 0.8:
+-            return EmotionCategory.DISTRESSED
+-        if anxiety > 0.6:
+-            return EmotionCategory.ANXIOUS
++    def _parse_environment(self, env: Optional[Dict]) -> Optional[EmotionCategory]:
++        """Parse environment signals into EmotionCategory (None = 无环境信号)。
++
++        R12 修复：白天"只有 hour"不构成中性投票。
++        bridge._process_cycle() 每轮都会注入 env["hour"]，若白天 hour 也返回
++        NEUTRAL，则 environment 通道会每轮投一个低权重 NEUTRAL，稀释视觉/语音
++        的真实信号，使"缺失模态权重置零并归一化"对 environment 形同虚设。
++
++        判定优先级：
++        1) bio_anxiety / noise_level / hour 全为 None → 无信号（None）；
++        2) 真实传感器优先：bio_anxiety > 0.8 → DISTRESSED，> 0.6 → ANXIOUS，
++           noise_level > 0.8 → ANXIOUS；
++        3) 只要存在 bio_anxiety 或 noise_level 读数（哪怕 0.0 这种低值，0.0 仍是
++           合法读数）→ 真实的"环境平静"读数，返回 NEUTRAL（保留投票）；
++        4) 只有 hour：夜间 → CALM（保留"夜间偏平静"弱先验），白天 → None（不投票）。
+ 
+-        # Noise level
+-        noise = env.get("noise_level", 0.0)
+-        if noise > 0.8:
++        注意：一律用 ``is None`` 判断缺失，避免把合法的 0.0 读数当成缺失。
++        """
++        if not env:
++            return None
++
++        # 分别取值；缺键与显式 None 等价，均为"无此读数"
++        bio = env.get("bio_anxiety")
++        noise = env.get("noise_level")
++        hour = env.get("hour")
++
++        # 三个可能的环境维度都没有 → 视为无信号
++        if bio is None and noise is None and hour is None:
++            return None
++
++        # 真实传感器优先：生物焦虑读数
++        if bio is not None:
++            if bio > 0.8:
++                return EmotionCategory.DISTRESSED
++            if bio > 0.6:
++                return EmotionCategory.ANXIOUS
++
++        # 噪声读数
++        if noise is not None and noise > 0.8:
+             return EmotionCategory.ANXIOUS
+ 
+-        # Time-of-day heuristics
+-        hour = env.get("hour", 12)
+-        if hour >= 21 or hour <= 6:
++        # 存在真实传感器读数（即便值很低，如 0.0/0.1）→ 有效的"环境平静"投票
++        if bio is not None or noise is not None:
++            return EmotionCategory.NEUTRAL
++
++        # 只有 hour → 时间启发式（弱先验：夜间默认偏平静；白天不投票）
++        if hour is not None and (hour >= 21 or hour <= 6):
+             return EmotionCategory.CALM
+ 
+-        return EmotionCategory.NEUTRAL
++        return None
+ 
+     # ─── Private: Attention ───────────────────────────────────────────
+ 
+@@ -216,65 +268,99 @@ class FusionEngine:
+         """
+         Calculate attention level from vision state.
+         Returns 0.0 (lost) to 1.0 (focused).
++
++        R12 修复：视觉不可用时注意力"未知"，取中性值 0.5。
++        此前 vision_state == {}（视觉引擎尚未出数据/掉线，连 face_detected 键都
++        没有）会走 `not v_state.get("face_detected", False)` 分支，attention_loss_time
++        取默认 0.0 后返回 1.0，把"没有视觉数据"误判成"孩子完全专注"。
++
++        安全核对：0.5 高于所有注意力相关阈值——
++        - behavior_sync 的低注意力阈值 0.3（``attention_level < 0.3``）；
++        - intervention 的注意力阈值 0.3（LOW）/ 0.1（CRITICAL）；
++        因此 0.5 既不惩罚也不奖励，且不会触发注意力干预。
+         """
+-        if not v_state.get("face_detected", False):
++        # 视觉不可用：既没有数据，也没有 face_detected 键 → 注意力未知
++        if not v_state or "face_detected" not in v_state:
++            return 0.5
++
++        # 明确检测到人脸丢失：按丢失时长线性衰减（0s 满注意力，10s 归零）
++        if not v_state["face_detected"]:
+             loss_time = v_state.get("attention_loss_time", 0.0)
+-            # Decay: full attention at 0s, lost at 10s
+             return max(0.0, 1.0 - (loss_time / 10.0))
++
+         return 1.0
+ 
+     # ─── Private: Fusion ─────────────────────────────────────────────
+ 
+     def _weighted_fuse(
+         self,
+-        v_emo: EmotionCategory,
+-        s_emo: EmotionCategory,
+-        e_emo: EmotionCategory,
++        v_emo: Optional[EmotionCategory],
++        s_emo: Optional[EmotionCategory],
++        e_emo: Optional[EmotionCategory],
+         attention: float,
+-    ) -> tuple[EmotionCategory, float]:
++    ) -> tuple[EmotionCategory, float, Dict[str, float]]:
+         """
+-        Weighted fusion of three modality emotions.
++        Weighted fusion of the modalities that actually produced a signal.
+ 
+-        Returns (category, confidence).
+-        """
+-        # Score each category across modalities
+-        scores: Dict[EmotionCategory, float] = {}
+-        total_weight = 0.0
++        缺失的模态（None）权重直接置零，剩余权重重新归一化，
++        避免"没人说话"被当作一个真实的 neutral 投票。
+ 
+-        for emo, weight_key in [
++        Returns:
++            (category, confidence, effective_weights)
++        """
++        modalities = [
+             (v_emo, "vision"),
+             (s_emo, "speech"),
+             (e_emo, "environment"),
+-        ]:
+-            w = self.weights[weight_key]
++        ]
++
++        # 只保留本轮有信号的模态
++        present = [
++            (emo, self.weights.get(key, 0.0))
++            for emo, key in modalities
++            if emo is not None
++        ]
++
++        total_weight = sum(w for _, w in present)
++        if not present or total_weight <= 0:
++            # 没有任何模态有信号 → 只能给出中性的低置信度猜测
++            return EmotionCategory.NEUTRAL, 0.3, {}
++
++        # 各情绪类别的加权得分
++        scores: Dict[EmotionCategory, float] = {}
++        for emo, w in present:
+             scores[emo] = scores.get(emo, 0.0) + w
+-            total_weight += w
+ 
+-        # Find the dominant emotion
+-        if not scores:
+-            return EmotionCategory.NEUTRAL, 0.5
++        # 得分最高者胜出（并列时保持插入顺序，即视觉优先）
++        dominant = max(scores, key=lambda k: scores[k])
++        raw_confidence = scores[dominant] / total_weight
+ 
+-        dominant = max(scores, key=scores.get)  # type: ignore[arg-type]
+-        raw_confidence = scores[dominant] / total_weight if total_weight > 0 else 0.5
++        # 一致度加成：多个模态指向同一情绪时更可信
++        agreement_count = sum(1 for emo, _ in present if emo == dominant)
++        agreement_bonus = (agreement_count - 1) * 0.15
+ 
+-        # Agreement bonus: if multiple modalities agree, boost confidence
+-        agreement_count = sum(
+-            1 for e in [v_emo, s_emo, e_emo] if e == dominant
+-        )
+-        agreement_bonus = (agreement_count - 1) * 0.15  # +0.15 per agreeing modality
++        # 证据数量校正：仅 1 个模态时天然证据不足
++        evidence_factor = {1: 0.75, 2: 0.90}.get(len(present), 1.0)
+ 
+-        # Attention penalty: low attention reduces confidence
++        # 注意力惩罚：孩子没在看，读数可信度下降
+         attention_penalty = (1.0 - attention) * 0.2
+ 
+-        confidence = min(1.0, max(0.0, raw_confidence + agreement_bonus - attention_penalty))
++        confidence = raw_confidence * evidence_factor + agreement_bonus - attention_penalty
++        confidence = min(1.0, max(0.0, confidence))
+ 
+-        # Special ASD rule: if vision says anxious/distressed, trust it more
++        # 特殊 ASD 安全规则：视觉读到焦虑/过载/恐惧时优先采信
+         if v_emo in (EmotionCategory.ANXIOUS, EmotionCategory.DISTRESSED, EmotionCategory.FEARFUL):
+             if confidence < 0.6:
+                 dominant = v_emo
+                 confidence = max(confidence, 0.6)
+ 
+-        return dominant, confidence
++        effective_weights = {
++            key: self.weights.get(key, 0.0) / total_weight
++            for emo, key in modalities
++            if emo is not None
++        }
++
++        return dominant, confidence, effective_weights
+ 
+     # ─── Private: Memory Context ─────────────────────────────────────
+ 
+@@ -332,7 +418,7 @@ class FusionEngine:
+         # Speech-based cause
+         text = speech_state.get("text", "")
+         if s_emo == fused and text:
+-            causes.append(f"语音语调分析")
++            causes.append("语音语调分析")
+ 
+         # Environment-based cause
+         if e_emo in (EmotionCategory.ANXIOUS, EmotionCategory.DISTRESSED):
+diff --git a/emotion/intervention.py b/emotion/intervention.py
+index 89dd245..460a0e3 100644
+--- a/emotion/intervention.py
++++ b/emotion/intervention.py
+@@ -101,6 +101,10 @@ INTERVENTION_THRESHOLDS = {
+ ATTENTION_THRESHOLD_LOW = 0.3
+ ATTENTION_THRESHOLD_CRITICAL = 0.1
+ 
++# 高紧急度干预（安全相关：过载 / 恐惧）。
++# 这类干预必须能"插队"，不能被普通冷却窗口挡掉。
++URGENT_URGENCIES = {"high"}
++
+ 
+ class InterventionEngine:
+     """
+@@ -121,9 +125,11 @@ class InterventionEngine:
+         self._last_plan = InterventionPlan()
+         self._intervention_count = 0
+         self._last_intervention_time: Optional[datetime] = None
++        self._last_urgency: str = "low"
+ 
+-        # Cooldown: minimum seconds between interventions
++        # 冷却窗口：普通干预 30s，高紧急度干预仅 8s
+         self.cooldown_seconds = 30
++        self.urgent_cooldown_seconds = 8
+ 
+         logger.info("✅ [干预引擎] 教育型干预系统已就绪")
+ 
+@@ -131,6 +137,9 @@ class InterventionEngine:
+         """
+         Evaluate the current emotional state and generate an intervention plan.
+ 
++        注意：冷却判定在"生成计划之后"，因为是否需要插队取决于本次干预的
++        紧急度（urgency），而不是上一次干预的时间。
++
+         Args:
+             state: Current fused EmotionState
+             context: What is happening (e.g., "自由对话")
+@@ -138,17 +147,21 @@ class InterventionEngine:
+         Returns:
+             InterventionPlan with guidance text and type
+         """
+-        # Check cooldown
+-        if self._is_in_cooldown():
+-            return InterventionPlan(intervention_type=InterventionType.NONE)
+-
+-        # Evaluate intervention need
+         plan = self._evaluate_intervention(state, context)
+ 
+-        if plan.intervention_type != InterventionType.NONE:
+-            self._last_plan = plan
+-            self._intervention_count += 1
+-            self._last_intervention_time = datetime.now()
++        if plan.intervention_type == InterventionType.NONE:
++            return plan
++
++        urgency = str(plan.metadata.get("urgency", "low"))
++
++        # 冷却期内的干预被抑制（高紧急度干预拥有独立的短冷却窗口）
++        if self._is_in_cooldown(urgency):
++            return InterventionPlan(intervention_type=InterventionType.NONE)
++
++        self._last_plan = plan
++        self._intervention_count += 1
++        self._last_intervention_time = datetime.now()
++        self._last_urgency = urgency
+ 
+         return plan
+ 
+@@ -257,11 +270,27 @@ class InterventionEngine:
+         responses = GUIDED_RESPONSES.get(category, GUIDED_RESPONSES[EmotionCategory.NEUTRAL])
+         return random.choice(responses)
+ 
+-    def _is_in_cooldown(self) -> bool:
+-        """Check if we're still in cooldown period."""
++    def _is_in_cooldown(self, urgency: str = "low") -> bool:
++        """
++        检查是否处于冷却期。
++
++        - 高紧急度（high）：仅受 ``urgent_cooldown_seconds`` 限制，保证过载/恐惧
++          等状态能及时得到安抚；
++        - 其它：受 ``cooldown_seconds`` 限制；
++        - 若上一次刚做过高紧急度干预，则低优先级干预需要等完整冷却，
++          避免打断正在进行的安抚过程。
++        """
+         if self._last_intervention_time is None:
+             return False
++
+         elapsed = (datetime.now() - self._last_intervention_time).total_seconds()
++
++        if urgency in URGENT_URGENCIES:
++            return elapsed < self.urgent_cooldown_seconds
++
++        if self._last_urgency in URGENT_URGENCIES:
++            return elapsed < self.cooldown_seconds
++
+         return elapsed < self.cooldown_seconds
+ 
+     def get_last_plan(self) -> InterventionPlan:
+diff --git a/emotion/memory_axis.py b/emotion/memory_axis.py
+index 4eb828d..33ec19d 100644
+--- a/emotion/memory_axis.py
++++ b/emotion/memory_axis.py
+@@ -12,6 +12,7 @@ Extends existing core/memory.py without modifying it.
+ from __future__ import annotations
+ 
+ import logging
++import os
+ import sqlite3
+ from datetime import datetime, timedelta
+ from typing import Dict, List, Optional, Tuple
+@@ -64,7 +65,15 @@ class MemoryAxis:
+ 
+     def _init_db(self) -> None:
+         """Initialize SQLite database with emotion_records table."""
++        # 确保数据目录存在：空目录不会被 git 跟踪，新克隆的仓库没有 data/
++        db_dir = os.path.dirname(os.path.abspath(self.db_path))
++        if db_dir:
++            os.makedirs(db_dir, exist_ok=True)
++
+         with sqlite3.connect(self.db_path) as conn:
++            # WAL 模式允许"写入线程"与"读取线程"并发，避免看板查询被写入阻塞
++            conn.execute("PRAGMA journal_mode=WAL")
++            conn.execute("PRAGMA busy_timeout=5000")
+             conn.execute(_CREATE_TABLE)
+             for idx_sql in _CREATE_INDEXES:
+                 conn.execute(idx_sql)
+diff --git a/launch.py b/launch.py
+index 9a70d60..0353750 100644
+--- a/launch.py
++++ b/launch.py
+@@ -102,7 +102,9 @@ def launch(
+         # Define getters that read from the robot's engines
+         if robot:
+             get_vision = robot.vision.get_latest_state
+-            get_speech = robot.speech.get_latest_text
++            # 非破坏性读取：主循环仍需消费语音事件，桥接器只"窥视"，
++            # 否则两个消费者会互相抢事件（先读到的一方把事件吃掉）。
++            get_speech = robot.speech.peek_latest_text
+         else:
+             # No robot: provide dummy getters for standalone dashboard
+             def get_vision():
+diff --git a/main.py b/main.py
+index 2dba913..938cebe 100644
+--- a/main.py
++++ b/main.py
+@@ -9,6 +9,9 @@ from modules.vision_engine import VisionEngine
+ from modules.speech_engine import SpeechEngine
+ from utils.audio_player import AudioPlayer
+ 
++# 统一配置（R11：删除本文件内重复定义的 Config，改为单一来源）
++from config import Config, LOG_LEVEL
++
+ 
+ @dataclass
+ class RobotState:
+@@ -19,22 +22,18 @@ class RobotState:
+     active_hint: str = ""  # 当前下发的视觉提示卡内容
+     chat_history: List[Dict] = field(default_factory=list)  # 存储对话历史供 UI 渲染
+ 
+-
+-@dataclass(frozen=True)
+-class Config:
+-    # 基础配置 [对齐 Ollama 模型]
+-    OLLAMA_MODEL: str = "gemma4:e4b"
+-    OLLAMA_URL: str = "http://localhost:11434/api/generate"
+-
+-    # ASD 特化阈值 [满足需求3：友好交互]
+-    ATTENTION_THRESHOLD: float = 8.0
+-    REINFORCEMENT_INTERVAL: float = 30.0
+-    SENSORY_FRIENDLY_VOLUME: float = 0.5
++    def push_history(self, role: str, content: str, limit: int = 200) -> None:
++        """追加对话记录并裁剪长度，避免长时间运行导致内存无界增长。"""
++        self.chat_history.append({"role": role, "content": content})
++        overflow = len(self.chat_history) - limit
++        if overflow > 0:
++            # 一次性丢弃超出的旧记录，避免每轮都触发切片
++            del self.chat_history[:overflow]
+ 
+ 
+ class SoulCompanionRobot:
+     def __init__(self):
+-        logging.basicConfig(level=logging.INFO)
++        logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
+         self.logger = logging.getLogger("XiaoYu_ASD")
+         self.config = Config()
+         self.state = RobotState()
+@@ -103,7 +102,7 @@ class SoulCompanionRobot:
+             self.state.performance_score += 1.0
+ 
+         # 同步用户话语到 UI 历史
+-        self.state.chat_history.append({"role": "user", "content": text})
++        self.state.push_history("user", text, self.config.MAX_CHAT_HISTORY)
+ 
+         # 调用大脑决策
+         self._trigger_brain(text, v_data, "SOCIAL_PRACTICE")
+@@ -123,15 +122,15 @@ class SoulCompanionRobot:
+ 
+         try:
+             payload = {"model": self.config.OLLAMA_MODEL, "prompt": prompt, "stream": False}
+-            # 增加超时到 60s，解决日志中的 Read Timeout 问题
+-            res = requests.post(self.config.OLLAMA_URL, json=payload, timeout=60)
++            # 超时可配置，缓解日志中的 Read Timeout 问题
++            res = requests.post(self.config.OLLAMA_URL, json=payload, timeout=self.config.OLLAMA_TIMEOUT)
+ 
+             if res.status_code == 200:
+                 reply = res.json().get("response", "").strip()
+                 self.logger.info(f"🧠 [决策] {reply}")
+ 
+                 # 同步回复到 UI 历史记录
+-                self.state.chat_history.append({"role": "assistant", "content": reply})
++                self.state.push_history("assistant", reply, self.config.MAX_CHAT_HISTORY)
+ 
+                 # 播报
+                 self.speaker.speak(reply)
+diff --git a/modules/speech_engine.py b/modules/speech_engine.py
+index 2b83644..4c4e9fe 100644
+--- a/modules/speech_engine.py
++++ b/modules/speech_engine.py
+@@ -23,8 +23,11 @@ if sys.platform == "win32":
+ class SpeechEngine:
+     def __init__(self, vosk_path="model", ser_model_path="models/ser_model"):
+         self.is_running = True
+-        self.current_state = {"text": "", "emotion": "neutral"}
++        self.current_state = {"text": "", "emotion": "neutral", "seq": 0}
+         self._lock = threading.Lock()
++        # 单调递增的语句序号：用于让多个消费者（主循环 / 情绪桥接器）
++        # 各自判断"这条语音我处理过没有"，避免破坏性读取互相抢事件。
++        self._seq = 0
+ 
+         # 1. 初始化 VOSK (内容识别)
+         print(f"🎙️ [听觉引擎] 正在加载 VOSK 模型: {vosk_path}...")
+@@ -124,9 +127,11 @@ class SpeechEngine:
+ 
+                         # 更新状态，供主程序读取
+                         with self._lock:
++                            self._seq += 1
+                             self.current_state = {
+                                 "text": text,
+-                                "emotion": final_emotion
++                                "emotion": final_emotion,
++                                "seq": self._seq,
+                             }
+ 
+             except queue.Empty:
+@@ -135,7 +140,11 @@ class SpeechEngine:
+                 print(f"⚠️ 音频处理异常: {e}")
+ 
+     def get_latest_text(self):
+-        """返回识别结果，并清空当前状态以防重复读取"""
++        """[破坏性] 返回识别结果，并清空当前状态以防重复读取。
++
++        适用于"唯一消费者"场景（如 main.py 主循环）。
++        若有多个消费者，请改用 peek_latest_text()，否则先读的一方会把事件吃掉。
++        """
+         with self._lock:
+             if self.current_state["text"]:
+                 result = self.current_state.copy()
+@@ -143,6 +152,26 @@ class SpeechEngine:
+                 return result
+         return None
+ 
++    def peek_latest_text(self):
++        """[非破坏性] 返回最近一次识别结果，但不清空状态。
++
++        返回 None 表示尚未有过识别结果。返回值中的 ``seq`` 字段单调递增，
++        调用方可用它判断"这条语音是否已经处理过"，从而与主循环共享同一事件
++        而不互相抢占。
++
++        用法::
++
++            state = speech.peek_latest_text()
++            if state and state["seq"] != self._last_seq:
++                self._last_seq = state["seq"]
++                ...
++        """
++        with self._lock:
++            state = self.current_state.copy()
++        if not state.get("text"):
++            return None
++        return state
++
+     def stop(self):
+         self.is_running = False
+         if hasattr(self, 'stream'):
+diff --git a/readme2.0.md b/readme2.0.md
+deleted file mode 100644
+index 7ceb971..0000000
+--- a/readme2.0.md
++++ /dev/null
+@@ -1,109 +0,0 @@
+-
+-# 🌟 小予智能陪伴机器人 - 环境配置手册 (2026 )
+-
+-本手册针对 **2026 三创赛 (SoulCompanion_AI)** 项目编写。项目已实现 **多模态情感感知**（离线视觉表情 + 离线语音情感）、**离线语音转写** 及 **TTS 输出**。
+-
+----
+-
+-## 🛠️ 第一步：基础环境与清理
+-
+-为了兼容最新的情感模型架构，请确保使用 **Python 3.12**，并清理旧版依赖冲突。
+-
+-1.  **升级 Pip**（必须）：
+-    ```powershell
+-    python.exe -m pip install --upgrade pip
+-    ```
+-2.  **NumPy 版本对齐**（关键）：
+-    由于 `ultralytics` 和 `scipy` 在当前环境下的限制，必须使用 1.x 版本的 NumPy。
+-    ```powershell
+-    pip install "numpy<2.0.0"
+-    ```
+-
+----
+-
+-## 📦 第二步：安装核心依赖（含多模态模型环境）
+-
+-本项目涉及深度学习框架，请**严格按照顺序**执行，以避开 Torch 安全检查拦截。
+-
+-### 1. 安装基础外设驱动
+-```powershell
+-pip install opencv-python vosk pyaudio pyttsx3
+-```
+-
+-### 2. 安装深度学习与情感识别框架
+-由于 `transformers` 最新的安全策略，我们采用了**版本降级策略**以适配当前稳定版驱动：
+-```powershell
+-# 安装特定版本防止安全拦截
+-pip install transformers==4.44.2 tf-keras
+-
+-# 安装 PyTorch (根据你的 CUDA 12.1 驱动对齐)
+-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+-```
+-
+----
+-
+-## 🧠 第三步：离线模型放置 (双模型驱动)
+-
+-机器人拥有两套离线模型，分别存放于不同目录。
+-
+-### 1. 语音转文字 (STT) 模型
+-* **来源**：[Vosk Models](https://alphacephei.com/vosk/models) (`vosk-model-small-cn-0.22`)。
+-* **位置**：根目录 `/model` 文件夹（包含 `am`, `graph` 等）。
+-
+-### 2. 音频情感识别 (SER) 模型
+-* **来源**：通过 `download_ser.py` 自动下载。
+-* **位置**：根目录 `/models/ser_model` 文件夹。
+-* **状态检查**：运行以下命令，看到 `退出代码 0` 即表示离线模型就绪：
+-    ```powershell
+-    python D:\SoulCompanion_AI\download_ser.py
+-    ```
+-
+-**正确的目录结构：**
+-```text
+-SoulCompanion_AI/
+-├── main.py              <-- 主程序入口
+-├── download_ser.py      <-- 模型维护工具
+-├── model/               <-- STT 语音模型 (Vosk)
+-├── models/
+-│   └── ser_model/       <-- 情感识别模型 (Wav2Vec2)
+-└── core/                <-- 机器人决策中枢
+-```
+-
+----
+-
+-## 🚀 第四步：启动与比赛演示建议
+-
+-1.  **启动阶段**：运行 `python main.py`。程序会加载多套深度学习模型，启动耗时约 **15-20 秒**。
+-2.  **离线验证**：模型下载成功后，建议**关闭 WiFi** 进行测试。如果程序能正常显示 `✅ [感知融合]`，则说明离线化成功。
+-3.  **性能优化**：
+-    * 如果演示电脑有显卡，请在 `main.py` 的 `SpeechEngine` 初始化中加入 `device=0` 参数。
+-    * 若报错 `ValueError: Due to a serious vulnerability...`，请检查 `transformers` 版本是否为 `4.44.2`。
+-
+----
+-
+-## 📑 最新依赖清单 (requirements.txt)
+-```text
+-numpy<2.0.0
+-opencv-python
+-vosk
+-pyaudio
+-pyttsx3
+-transformers==4.44.2
+-tf-keras
+-torch
+-torchvision
+-torchaudio
+-```
+-
+----
+-
+-**💡 小提醒：**
+-在比赛前，请确保执行过 `pip install "defusedxml<0.8.0"` 以消除 `supervision` 库的版本冲突警告，让终端日志保持干净，只留下机器人的交互日志！
+-
+----
+-
+-### 主要更新点说明：
+-1.  **NumPy 限制**：增加了 `numpy<2.0.0` 的明确要求，防止底层数学库冲突。
+-2.  **Torch 安全避坑**：加入了 `transformers==4.44.2` 和 `tf-keras` 的安装步骤，这是你解决 `ValueError` 和 `ModuleNotFoundError` 的关键记录。
+-3.  **双路径模型说明**：区分了根目录下的 `model`（语音识别）和 `models/ser_model`（情感识别），防止文件夹混淆。
+-4.  **离线化确认**：明确了模型下载后的成功标志。
+\ No newline at end of file
+diff --git a/reports/report_generator.py b/reports/report_generator.py
+index 86930cc..b74fd20 100644
+--- a/reports/report_generator.py
++++ b/reports/report_generator.py
+@@ -1,6 +1,6 @@
+ # SoulCompanion_AI/reports/report_generator.py
+-import sqlite3
+ import os
++import sqlite3
+ import sys
+ from datetime import datetime
+ 
+@@ -8,6 +8,10 @@ from datetime import datetime
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+ from config import DATABASE_PATH
+ 
++# 情绪归类（新旧两套表共用同一套词表）
++POSITIVE_EMOTIONS = {"happy", "calm", "surprised"}
++NEGATIVE_EMOTIONS = {"sad", "anxious", "angry", "fearful", "distressed"}
++
+ 
+ class ReportGenerator:
+     def __init__(self, db_path=None):
+@@ -15,34 +19,77 @@ class ReportGenerator:
+         # 确保输出目录存在
+         os.makedirs("reports/output", exist_ok=True)
+ 
++    @staticmethod
++    def _has_table(conn, name: str) -> bool:
++        """判断表是否存在（避免直接查询不存在的表而抛异常）。"""
++        row = conn.execute(
++            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
++        ).fetchone()
++        return row is not None
++
++    def _load_day(self, today: str):
++        """
++        读取当日交互记录，统一成 (时间, 孩子说了什么, 情绪, 分值) 四元组。
++
++        优先读取新情绪管线的 emotion_records 表；若该表不存在或当天没有数据，
++        再回退到旧版 logs 表（由 core/memory.py 写入），保证两条数据链路都能出报告。
++        """
++        with sqlite3.connect(self.db_path) as conn:
++            if self._has_table(conn, "emotion_records"):
++                rows = conn.execute(
++                    """SELECT timestamp, source_text, category, valence
++                       FROM emotion_records
++                       WHERE timestamp LIKE ?
++                       ORDER BY timestamp""",
++                    (f"{today}%",),
++                ).fetchall()
++                if rows:
++                    return [
++                        (ts, text or "", cat or "neutral", val if val is not None else 0.0)
++                        for ts, text, cat, val in rows
++                    ]
++
++            if self._has_table(conn, "logs"):
++                return conn.execute(
++                    "SELECT time, user_input, emotion, score FROM logs WHERE time LIKE ?",
++                    (f"{today}%",),
++                ).fetchall()
++
++        return []
++
+     def generate_daily_report(self):
+         """读取 SQLite 数据库，生成今日儿童情感状态报告"""
+         today = datetime.now().strftime("%Y-%m-%d")
+ 
+-        try:
+-            with sqlite3.connect(self.db_path) as conn:
+-                # 获取今天的对话记录
+-                cursor = conn.execute("SELECT time, user_input, emotion, score FROM logs WHERE time LIKE ?", (f"{today}%",))
+-                records = cursor.fetchall()
+-        except sqlite3.OperationalError:
++        if not os.path.exists(self.db_path):
+             print("❌ 数据库未找到，请先让小予和孩子聊聊天哦！")
+             return
+ 
++        try:
++            records = self._load_day(today)
++        except sqlite3.Error as e:
++            print(f"❌ 读取数据库失败: {e}")
++            return
++
+         if not records:
+             print("📝 今天还没有交互记录呢。")
+             return
+ 
+         # 数据分析
+         total_interactions = len(records)
+-        positive_count = sum(1 for r in records if r[2] == 'happy')
+-        negative_count = sum(1 for r in records if r[2] == 'sad')
++        positive_count = sum(1 for r in records if r[2] in POSITIVE_EMOTIONS)
++        negative_count = sum(1 for r in records if r[2] in NEGATIVE_EMOTIONS)
+ 
+         # 简单的健康度计算
+         health_score = 100 - (negative_count * 15) + (positive_count * 5)
+         health_score = max(0, min(100, health_score))  # 限制在 0-100 之间
+ 
+-        # 提取负面瞬间提醒家长
+-        sad_moments = [f"[{r[0][11:16]}] 孩子说: '{r[1]}'" for r in records if r[2] == 'sad']
++        # 提取负面瞬间提醒家长（时间取 HH:MM，兼容 "YYYY-MM-DD HH:MM:SS" 与 ISO 格式）
++        sad_moments = [
++            f"[{str(r[0])[11:16]}] 孩子说: '{r[1]}'"
++            for r in records
++            if r[2] in NEGATIVE_EMOTIONS
++        ]
+ 
+         # 生成 Markdown 格式报告
+         report_content = f"""# 🌟 小予机器人 - 每日儿童情感陪伴报告
+@@ -74,4 +121,4 @@ class ReportGenerator:
+ # 如果单独运行此脚本，则直接生成报告
+ if __name__ == "__main__":
+     generator = ReportGenerator()
+-    generator.generate_daily_report()
+\ No newline at end of file
++    generator.generate_daily_report()
+diff --git a/requirements.txt b/requirements.txt
+index 12a4706..f62a916 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1 +1,26 @@
++# SoulCompanion AI - 运行时依赖
++# 安装：pip install -r requirements.txt
++#
++# 注意：numpy 必须 <2.0，opencv / onnxruntime / vosk 等二进制轮子
++# 目前尚未全部适配 numpy 2.x 的 ABI。
++
++# ── 基础 ─────────────────────────────────────────────────────────────
++numpy<2.0.0
++requests
++
++# ── 视觉（人脸 / 表情）─────────────────────────────────────────────────
++opencv-python
++onnxruntime
++
++# ── 语音（离线识别 + 语音情感识别）───────────────────────────────────
++vosk
++pyaudio
++transformers
++torch
++
++# ── 语音合成 ─────────────────────────────────────────────────────────
++pyttsx3
++
++# ── Web 仪表板（FastAPI + Streamlit 两种部署方式）─────────────────────
++-r requirements-web.txt
+ streamlit
+diff --git a/web/api.py b/web/api.py
+index 9689ae5..466f82b 100644
+--- a/web/api.py
++++ b/web/api.py
+@@ -36,17 +36,26 @@ from fastapi.staticfiles import StaticFiles
+ from fastapi.templating import Jinja2Templates
+ from starlette.requests import Request
+ 
++from config import CORS_ORIGINS, DASHBOARD_HOST, DASHBOARD_PORT
++
++APP_VERSION = "1.1.0"
++
+ app = FastAPI(
+     title="小予情绪智能仪表板",
+     description="SoulCompanion AI - ASD儿童多模态情绪智能监控系统",
+-    version="1.0.0",
++    version=APP_VERSION,
+ )
+ 
+-# CORS for local development
++# ─── CORS ─────────────────────────────────────────────────────────────
++# 默认只放行本机来源。注意：allow_origins=["*"] 与 allow_credentials=True
++# 是互斥的（浏览器会直接拒绝该组合），因此在通配模式下强制关闭凭证。
++_origins = [o.strip() for o in (CORS_ORIGINS or "").split(",") if o.strip()]
++_wildcard = "*" in _origins
++
+ app.add_middleware(
+     CORSMiddleware,
+-    allow_origins=["*"],
+-    allow_credentials=True,
++    allow_origins=["*"] if _wildcard else _origins,
++    allow_credentials=not _wildcard,
+     allow_methods=["*"],
+     allow_headers=["*"],
+ )
+@@ -254,8 +263,8 @@ async def get_valence_series(days: int = 7):
+ @app.get("/api/behavior/status")
+ async def get_behavior_status():
+     """Get current behavior engine status."""
+-    if _has_bridge():
+-        return _embodied().get_status()
++    # 无论是否接入桥接器，行为引擎实例都从 _embodied() 取（桥接模式下
++    # 它会返回桥接器内部的那一份），因此无需分支。
+     return _embodied().get_status()
+ 
+ 
+@@ -404,7 +413,7 @@ async def get_system_status():
+             "embodied_engine": True,
+             "intervention_engine": True,
+         },
+-        "version": "1.0.0",
++        "version": APP_VERSION,
+     }
+ 
+ 
+@@ -506,4 +515,7 @@ async def skill_dashboard_layout():
+ 
+ if __name__ == "__main__":
+     import uvicorn
+-    uvicorn.run(app, host="0.0.0.0", port=8000)
++
++    # 默认只绑定本机：看板上是儿童的情绪数据，不应默认暴露到局域网。
++    # 需要局域网访问时用 `python -m web.app --host 0.0.0.0` 显式开启。
++    uvicorn.run(app, host=DASHBOARD_HOST, port=DASHBOARD_PORT)

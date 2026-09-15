@@ -9,6 +9,9 @@ from modules.vision_engine import VisionEngine
 from modules.speech_engine import SpeechEngine
 from utils.audio_player import AudioPlayer
 
+# 统一配置（R11：删除本文件内重复定义的 Config，改为单一来源）
+from config import Config, LOG_LEVEL
+
 
 @dataclass
 class RobotState:
@@ -19,22 +22,18 @@ class RobotState:
     active_hint: str = ""  # 当前下发的视觉提示卡内容
     chat_history: List[Dict] = field(default_factory=list)  # 存储对话历史供 UI 渲染
 
-
-@dataclass(frozen=True)
-class Config:
-    # 基础配置 [对齐 Ollama 模型]
-    OLLAMA_MODEL: str = "gemma4:e4b"
-    OLLAMA_URL: str = "http://localhost:11434/api/generate"
-
-    # ASD 特化阈值 [满足需求3：友好交互]
-    ATTENTION_THRESHOLD: float = 8.0
-    REINFORCEMENT_INTERVAL: float = 30.0
-    SENSORY_FRIENDLY_VOLUME: float = 0.5
+    def push_history(self, role: str, content: str, limit: int = 200) -> None:
+        """追加对话记录并裁剪长度，避免长时间运行导致内存无界增长。"""
+        self.chat_history.append({"role": role, "content": content})
+        overflow = len(self.chat_history) - limit
+        if overflow > 0:
+            # 一次性丢弃超出的旧记录，避免每轮都触发切片
+            del self.chat_history[:overflow]
 
 
 class SoulCompanionRobot:
     def __init__(self):
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
         self.logger = logging.getLogger("XiaoYu_ASD")
         self.config = Config()
         self.state = RobotState()
@@ -103,7 +102,7 @@ class SoulCompanionRobot:
             self.state.performance_score += 1.0
 
         # 同步用户话语到 UI 历史
-        self.state.chat_history.append({"role": "user", "content": text})
+        self.state.push_history("user", text, self.config.MAX_CHAT_HISTORY)
 
         # 调用大脑决策
         self._trigger_brain(text, v_data, "SOCIAL_PRACTICE")
@@ -123,15 +122,15 @@ class SoulCompanionRobot:
 
         try:
             payload = {"model": self.config.OLLAMA_MODEL, "prompt": prompt, "stream": False}
-            # 增加超时到 60s，解决日志中的 Read Timeout 问题
-            res = requests.post(self.config.OLLAMA_URL, json=payload, timeout=60)
+            # 超时可配置，缓解日志中的 Read Timeout 问题
+            res = requests.post(self.config.OLLAMA_URL, json=payload, timeout=self.config.OLLAMA_TIMEOUT)
 
             if res.status_code == 200:
                 reply = res.json().get("response", "").strip()
                 self.logger.info(f"🧠 [决策] {reply}")
 
                 # 同步回复到 UI 历史记录
-                self.state.chat_history.append({"role": "assistant", "content": reply})
+                self.state.push_history("assistant", reply, self.config.MAX_CHAT_HISTORY)
 
                 # 播报
                 self.speaker.speak(reply)

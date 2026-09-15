@@ -10,7 +10,8 @@ Architecture:
         │
         ├── vision.get_latest_state() ──┐
         │                                │
-        └── speech.get_latest_text() ───┤
+        └── speech.peek_latest_text() ──┤  (非破坏性读取, 推荐)
+        └── speech.get_latest_text()  ──┘  (破坏性, 会与主循环抢事件)
                                          ▼
                               ┌──────────────────┐
                               │   EmotionBridge   │ (background thread)
@@ -28,7 +29,7 @@ Architecture:
 Usage:
     bridge = EmotionBridge(
         get_vision_state=robot.vision.get_latest_state,
-        get_speech_state=robot.speech.get_latest_text,
+        get_speech_state=robot.speech.peek_latest_text,  # 非破坏性，别用 get_*
     )
     bridge.start()  # Runs in background thread
 
@@ -87,7 +88,10 @@ class EmotionSnapshot:
     last_update: str = ""
 
     # Attention
-    attention_level: float = 1.0
+    # R12：默认 0.5（注意力"未知"），与 fusion_engine 的约定一致。
+    # 桥接器尚未跑完首轮时，看板不应把"未知"渲染成"满注意力"（1.0），
+    # 也不应渲染成"注意力丢失"（0.0）——0.5 是既不奖励也不惩罚的中性值。
+    attention_level: float = 0.5
 
 
 # Type aliases for getter functions
@@ -129,21 +133,37 @@ class EmotionBridge:
         self._env_signals = env_signals or {}
         self._cycle_interval = cycle_interval
 
-        # ── Initialize emotion modules ──
+        # ── 初始化情绪模块 ──
         self._memory = MemoryAxis(db_path=db_path)
         self._fusion = FusionEngine(memory_axis=self._memory)
         self._behavior = BehaviorSync()
         self._embodied = EmbodiedEngine(hardware_available=hardware_available)
         self._intervention = InterventionEngine(memory_axis=self._memory)
 
-        # ── State ──
+        # ── 状态 ──
         self._snapshot = EmotionSnapshot()
         self._lock = threading.Lock()
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._cycle_count = 0
 
-        # ── Callbacks ──
+        # ── 记忆写入策略（抑制写放大）──
+        # 0.5s 一轮 = 每天约 17 万行，几天就能把 SQLite 撑爆。
+        # 策略：情绪类别变化 或 valence 跨越一个档位 → 立即记录；
+        #       否则每 _record_heartbeat 秒补一条基线，保证时间序列连续。
+        self._record_heartbeat = 30.0
+        self._valence_bucket = 0.2
+        self._last_record_signature: Optional[tuple] = None
+        self._last_record_time = 0.0
+
+        # ── 语音新鲜度 ──
+        # peek 接口是非破坏性的，同一句话会被反复读到；这里用 seq 去重，
+        # 并加一个时间窗，避免几分钟前的一句话持续主导当前情绪判断。
+        self._speech_freshness = 10.0
+        self._last_speech_seq: Optional[int] = None
+        self._last_speech_time = 0.0
+
+        # ── 回调 ──
         self._on_intervention: Optional[Callable[[InterventionPlan], None]] = None
         self._on_behavior: Optional[Callable[[BehaviorCommand], None]] = None
 
@@ -233,13 +253,75 @@ class EmotionBridge:
 
         logger.info("🔄 [桥接器] 情绪处理循环结束")
 
+    def _read_vision(self) -> Dict:
+        """安全读取视觉状态；getter 抛异常时返回空 dict 而不是中断整个周期。"""
+        try:
+            return self._get_vision() or {}
+        except Exception as e:
+            logger.debug(f"读取视觉状态失败: {e}")
+            return {}
+
+    def _read_speech(self) -> Optional[Dict]:
+        """
+        安全读取语音状态，并过滤掉已经不新鲜的旧语句。
+
+        - 若 getter 返回带 ``seq`` 的 dict（peek_latest_text），用 seq 去重，
+          同一句话只在 ``_speech_freshness`` 秒内参与融合；
+        - 若返回不带 ``seq`` 的旧格式，则保持原有行为（视为新鲜）。
+        """
+        try:
+            speech_state = self._get_speech()
+        except Exception as e:
+            logger.debug(f"读取语音状态失败: {e}")
+            return None
+
+        if not speech_state:
+            return None
+
+        seq = speech_state.get("seq")
+        if seq is None:
+            # 旧版 getter：无法去重，直接采信
+            return speech_state
+
+        now = time.time()
+        if seq != self._last_speech_seq:
+            self._last_speech_seq = seq
+            self._last_speech_time = now
+            return speech_state
+
+        if now - self._last_speech_time <= self._speech_freshness:
+            return speech_state
+        return None
+
+    def _should_record(self, state: EmotionState) -> bool:
+        """
+        决定本轮是否写入长期记忆。
+
+        去重条件：情绪类别 + valence 档位（默认 0.2 一档）。
+        变化时立即写入；无变化时每 ``_record_heartbeat`` 秒补一条基线。
+        """
+        now = time.time()
+        bucket = round(state.valence / self._valence_bucket)
+        signature = (state.category, bucket)
+
+        if signature != self._last_record_signature:
+            self._last_record_signature = signature
+            self._last_record_time = now
+            return True
+
+        if now - self._last_record_time >= self._record_heartbeat:
+            self._last_record_time = now
+            return True
+
+        return False
+
     def _process_cycle(self) -> None:
         """Single processing cycle: read → fuse → act → record."""
         self._cycle_count += 1
 
         # ── 1. Read sensor state ──
-        vision_state = self._get_vision()
-        speech_state = self._get_speech()
+        vision_state = self._read_vision()
+        speech_state = self._read_speech()
 
         # Merge environment signals with dynamic data
         env = dict(self._env_signals)
@@ -252,9 +334,10 @@ class EmotionBridge:
             env_signals=env,
         )
 
-        # ── 3. Record to memory ──
+        # ── 3. Record to memory (带去重/限频，避免写放大) ──
         context = speech_state.get("text", "") if speech_state else ""
-        self._memory.record(emotion_state, context=context, source_text=context)
+        if self._should_record(emotion_state):
+            self._memory.record(emotion_state, context=context, source_text=context)
 
         # ── 4. Generate behavior command ──
         behavior_cmd = self._behavior.sync(emotion_state)

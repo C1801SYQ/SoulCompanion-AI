@@ -3,6 +3,10 @@ __pycache__/
 *.pyo
 .idea/
 .vscode/
+.pytest_cache/
+.venv/
+.venv-test/
+venv/
 *.sqlite
 models/ser_model/
 model/
@@ -16,3 +20,13 @@ Cachenpm/
 node_modules/
 emotion_state.json
 emotion_cloud_data.json
+
+# ── 本地工具产物 ─────────────────────────────────────────────────────
+# wrangler 本地状态（含账号缓存，不入库）
+.wrangler/
+# 本地 AI 协作/记忆目录
+.workbuddy/
+
+# ── 静态站构建产物 ───────────────────────────────────────────────────
+# 由 `python scripts/build_site.py` 生成，请勿手工修改或入库
+dist-site/

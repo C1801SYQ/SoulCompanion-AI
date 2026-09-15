@@ -13,6 +13,7 @@ import logging
 from typing import Dict
 
 from emotion.models import (
+    ATTENTION_THRESHOLD_LOW,
     BehaviorAction,
     BehaviorCommand,
     EmotionCategory,
@@ -135,7 +136,8 @@ class BehaviorSync:
         servo_speed = base["servo_speed"]
 
         # ── 2. Apply attention-based adjustments ──
-        if state.attention_level < 0.3:
+        # R12：低注意力阈值改用共享常量，与 intervention 保持单一数据源。
+        if state.attention_level < ATTENTION_THRESHOLD_LOW:
             # Child is not paying attention - add gentle attractors
             for action in LOW_ATTENTION_BEHAVIORS["actions"]:
                 if action not in actions:
@@ -184,7 +186,7 @@ class BehaviorSync:
         """Build a human-readable reason for the behavior choice."""
         parts = [f"情绪={category.value}"]
 
-        if state.attention_level < 0.3:
+        if state.attention_level < ATTENTION_THRESHOLD_LOW:
             parts.append("注意力低")
         if state.arousal > 0.8:
             parts.append("高唤醒")

@@ -1,0 +1,22 @@
+# Cloudflare Pages _headers
+# 文档：https://developers.cloudflare.com/pages/configuration/headers/
+#
+# 说明：本看板演示站只提供"合成演示数据"，不涉及任何真实儿童数据。
+# 下面的安全响应头按"最保守"原则设置（nosniff / DENY / no-referrer）。
+
+# ── 全局安全头 ───────────────────────────────────────────────────────
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+
+# ── 静态资源：长缓存（文件名带内容版本时更佳，这里采用 7 天）──────────
+/static/*
+  Cache-Control: public, max-age=604800
+
+# ── 入口页面：不缓存，保证部署更新后立即生效 ─────────────────────────
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache

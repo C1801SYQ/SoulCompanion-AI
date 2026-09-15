@@ -23,8 +23,11 @@ if sys.platform == "win32":
 class SpeechEngine:
     def __init__(self, vosk_path="model", ser_model_path="models/ser_model"):
         self.is_running = True
-        self.current_state = {"text": "", "emotion": "neutral"}
+        self.current_state = {"text": "", "emotion": "neutral", "seq": 0}
         self._lock = threading.Lock()
+        # 单调递增的语句序号：用于让多个消费者（主循环 / 情绪桥接器）
+        # 各自判断"这条语音我处理过没有"，避免破坏性读取互相抢事件。
+        self._seq = 0
 
         # 1. 初始化 VOSK (内容识别)
         print(f"🎙️ [听觉引擎] 正在加载 VOSK 模型: {vosk_path}...")
@@ -124,9 +127,11 @@ class SpeechEngine:
 
                         # 更新状态，供主程序读取
                         with self._lock:
+                            self._seq += 1
                             self.current_state = {
                                 "text": text,
-                                "emotion": final_emotion
+                                "emotion": final_emotion,
+                                "seq": self._seq,
                             }
 
             except queue.Empty:
@@ -135,13 +140,37 @@ class SpeechEngine:
                 print(f"⚠️ 音频处理异常: {e}")
 
     def get_latest_text(self):
-        """返回识别结果，并清空当前状态以防重复读取"""
+        """[破坏性] 返回识别结果，并清空当前状态以防重复读取。
+
+        适用于"唯一消费者"场景（如 main.py 主循环）。
+        若有多个消费者，请改用 peek_latest_text()，否则先读的一方会把事件吃掉。
+        """
         with self._lock:
             if self.current_state["text"]:
                 result = self.current_state.copy()
                 self.current_state["text"] = ""  # 读取后清空
                 return result
         return None
+
+    def peek_latest_text(self):
+        """[非破坏性] 返回最近一次识别结果，但不清空状态。
+
+        返回 None 表示尚未有过识别结果。返回值中的 ``seq`` 字段单调递增，
+        调用方可用它判断"这条语音是否已经处理过"，从而与主循环共享同一事件
+        而不互相抢占。
+
+        用法::
+
+            state = speech.peek_latest_text()
+            if state and state["seq"] != self._last_seq:
+                self._last_seq = state["seq"]
+                ...
+        """
+        with self._lock:
+            state = self.current_state.copy()
+        if not state.get("text"):
+            return None
+        return state
 
     def stop(self):
         self.is_running = False

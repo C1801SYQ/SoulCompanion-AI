@@ -73,6 +73,28 @@ body {
     color: var(--text-muted);
 }
 
+/* ─── Demo Data Badge ──────────────────────────────────────────── */
+/* 醒目警示：演示模式下必须让家长一眼看出当前是合成数据 */
+.demo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #E65100;
+    background: #FFF3E0;
+    border: 1px solid var(--warning);
+    border-radius: 16px;
+    animation: demo-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes demo-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.65; }
+}
+
 .header-right {
     display: flex;
     align-items: center;

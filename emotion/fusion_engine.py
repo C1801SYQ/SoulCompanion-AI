@@ -27,9 +27,23 @@ VISION_EMOTION_MAP: Dict[str, EmotionCategory] = {
     "anxious": EmotionCategory.ANXIOUS,
     "angry": EmotionCategory.ANGRY,
     "fear": EmotionCategory.FEARFUL,
-    "disgust": EmotionCategory.ANXIOUS,   # Map disgust → anxious for ASD
+    # 现状说明（R12 评估，未改变语义）：目前把"厌恶"并入"焦虑"。
+    # 严格来说 disgust（厌恶）与 anxious（焦虑）语义并不完全一致，
+    # 但人脸"厌恶"表情在 ASD 儿童交互场景中常表现为回避/不适，
+    # 归入"焦虑"可复用现有的安抚行为与干预路径，且避免新增触发面。
+    # 若后续有独立干预策略，建议改为独立映射（如 DISGUST）并单独处理；
+    # 本次仅加注释记录现状，不改变映射。
+    "disgust": EmotionCategory.ANXIOUS,
     "neutral": EmotionCategory.NEUTRAL,
 }
+
+# ASD 安全规则：视觉读到"焦虑/恐惧"时优先采信（无需高置信度背书）。
+# R12 修复：移除不可达的 DISTRESSED——VISION_EMOTION_MAP 永不产出 DISTRESSED，
+# 该类别由环境通道 bio_anxiety（>0.8）产生，因此把它写进视觉优先集合是死分支。
+ASD_VISION_PRIORITY: frozenset = frozenset({
+    EmotionCategory.ANXIOUS,
+    EmotionCategory.FEARFUL,
+})
 
 SPEECH_EMOTION_MAP: Dict[str, EmotionCategory] = {
     "happy": EmotionCategory.HAPPY,
@@ -120,6 +134,8 @@ class FusionEngine:
         env_signals = env_signals or {}
 
         # ── 1. Parse individual modality signals ──
+        # 返回 None 表示该模态本轮"无有效信号"（不是"中性"！），
+        # 后续融合会将其权重置零并重新归一化。
         v_emotion = self._parse_vision(vision_state)
         s_emotion = self._parse_speech(speech_state)
         e_emotion = self._parse_environment(env_signals)
@@ -128,7 +144,7 @@ class FusionEngine:
         attention = self._calc_attention(vision_state)
 
         # ── 3. Weighted fusion ──
-        fused_category, confidence = self._weighted_fuse(
+        fused_category, confidence, effective_weights = self._weighted_fuse(
             v_emotion, s_emotion, e_emotion, attention
         )
 
@@ -153,12 +169,12 @@ class FusionEngine:
             confidence=round(confidence, 3),
             valence=round(valence, 3),
             arousal=round(arousal, 3),
-            vision_emotion=v_emotion.value if isinstance(v_emotion, EmotionCategory) else str(v_emotion),
-            speech_emotion=s_emotion.value if isinstance(s_emotion, EmotionCategory) else str(s_emotion),
-            environment_signal=e_emotion.value if isinstance(e_emotion, EmotionCategory) else str(e_emotion),
+            vision_emotion=self._label(v_emotion),
+            speech_emotion=self._label(s_emotion),
+            environment_signal=self._label(e_emotion),
             emotional_cause=cause,
             attention_level=round(attention, 3),
-            source_weights=self.weights.copy(),
+            source_weights=effective_weights,
         )
 
         # ── 8. Update history ──
@@ -179,36 +195,86 @@ class FusionEngine:
 
     # ─── Private: Parsing ─────────────────────────────────────────────
 
-    def _parse_vision(self, v_state: Dict) -> EmotionCategory:
-        """Parse vision engine output into EmotionCategory."""
-        raw = v_state.get("emotion", "neutral")
+    @staticmethod
+    def _label(emo: Optional[EmotionCategory]) -> str:
+        """把模态结果转成可展示的字符串；None 表示本轮无有效信号。"""
+        if emo is None:
+            return "unknown"
+        if isinstance(emo, EmotionCategory):
+            return emo.value
+        return str(emo)
+
+    def _parse_vision(self, v_state: Dict) -> Optional[EmotionCategory]:
+        """Parse vision engine output into EmotionCategory (None = 无有效信号)。"""
+        if not v_state:
+            return None
+        # 明确报告"没检测到人脸"时，面部情绪读数不可信，视为缺失
+        if v_state.get("face_detected") is False:
+            return None
+        raw = v_state.get("emotion")
+        if not raw:
+            return None
         return VISION_EMOTION_MAP.get(raw, EmotionCategory.NEUTRAL)
 
-    def _parse_speech(self, s_state: Dict) -> EmotionCategory:
-        """Parse speech engine output into EmotionCategory."""
-        raw = s_state.get("emotion", "neutral")
+    def _parse_speech(self, s_state: Optional[Dict]) -> Optional[EmotionCategory]:
+        """Parse speech engine output into EmotionCategory (None = 无人说话)。"""
+        if not s_state:
+            return None
+        raw = s_state.get("emotion")
+        if not raw:
+            return None
         return SPEECH_EMOTION_MAP.get(raw, EmotionCategory.NEUTRAL)
 
-    def _parse_environment(self, env: Dict) -> EmotionCategory:
-        """Parse environment signals into EmotionCategory."""
-        # Bio anxiety level
-        anxiety = env.get("bio_anxiety", 0.0)
-        if anxiety > 0.8:
-            return EmotionCategory.DISTRESSED
-        if anxiety > 0.6:
+    def _parse_environment(self, env: Optional[Dict]) -> Optional[EmotionCategory]:
+        """Parse environment signals into EmotionCategory (None = 无环境信号)。
+
+        R12 修复：白天"只有 hour"不构成中性投票。
+        bridge._process_cycle() 每轮都会注入 env["hour"]，若白天 hour 也返回
+        NEUTRAL，则 environment 通道会每轮投一个低权重 NEUTRAL，稀释视觉/语音
+        的真实信号，使"缺失模态权重置零并归一化"对 environment 形同虚设。
+
+        判定优先级：
+        1) bio_anxiety / noise_level / hour 全为 None → 无信号（None）；
+        2) 真实传感器优先：bio_anxiety > 0.8 → DISTRESSED，> 0.6 → ANXIOUS，
+           noise_level > 0.8 → ANXIOUS；
+        3) 只要存在 bio_anxiety 或 noise_level 读数（哪怕 0.0 这种低值，0.0 仍是
+           合法读数）→ 真实的"环境平静"读数，返回 NEUTRAL（保留投票）；
+        4) 只有 hour：夜间 → CALM（保留"夜间偏平静"弱先验），白天 → None（不投票）。
+
+        注意：一律用 ``is None`` 判断缺失，避免把合法的 0.0 读数当成缺失。
+        """
+        if not env:
+            return None
+
+        # 分别取值；缺键与显式 None 等价，均为"无此读数"
+        bio = env.get("bio_anxiety")
+        noise = env.get("noise_level")
+        hour = env.get("hour")
+
+        # 三个可能的环境维度都没有 → 视为无信号
+        if bio is None and noise is None and hour is None:
+            return None
+
+        # 真实传感器优先：生物焦虑读数
+        if bio is not None:
+            if bio > 0.8:
+                return EmotionCategory.DISTRESSED
+            if bio > 0.6:
+                return EmotionCategory.ANXIOUS
+
+        # 噪声读数
+        if noise is not None and noise > 0.8:
             return EmotionCategory.ANXIOUS
 
-        # Noise level
-        noise = env.get("noise_level", 0.0)
-        if noise > 0.8:
-            return EmotionCategory.ANXIOUS
+        # 存在真实传感器读数（即便值很低，如 0.0/0.1）→ 有效的"环境平静"投票
+        if bio is not None or noise is not None:
+            return EmotionCategory.NEUTRAL
 
-        # Time-of-day heuristics
-        hour = env.get("hour", 12)
-        if hour >= 21 or hour <= 6:
+        # 只有 hour → 时间启发式（弱先验：夜间默认偏平静；白天不投票）
+        if hour is not None and (hour >= 21 or hour <= 6):
             return EmotionCategory.CALM
 
-        return EmotionCategory.NEUTRAL
+        return None
 
     # ─── Private: Attention ───────────────────────────────────────────
 
@@ -216,65 +282,100 @@ class FusionEngine:
         """
         Calculate attention level from vision state.
         Returns 0.0 (lost) to 1.0 (focused).
+
+        R12 修复：视觉不可用时注意力"未知"，取中性值 0.5。
+        此前 vision_state == {}（视觉引擎尚未出数据/掉线，连 face_detected 键都
+        没有）会走 `not v_state.get("face_detected", False)` 分支，attention_loss_time
+        取默认 0.0 后返回 1.0，把"没有视觉数据"误判成"孩子完全专注"。
+
+        安全核对：0.5 高于所有注意力相关阈值——
+        - behavior_sync 的低注意力阈值 0.3（``attention_level < 0.3``）；
+        - intervention 的注意力阈值 0.3（LOW）/ 0.1（CRITICAL）；
+        因此 0.5 既不惩罚也不奖励，且不会触发注意力干预。
         """
-        if not v_state.get("face_detected", False):
+        # 视觉不可用：既没有数据，也没有 face_detected 键 → 注意力未知
+        if not v_state or "face_detected" not in v_state:
+            return 0.5
+
+        # 明确检测到人脸丢失：按丢失时长线性衰减（0s 满注意力，10s 归零）
+        if not v_state["face_detected"]:
             loss_time = v_state.get("attention_loss_time", 0.0)
-            # Decay: full attention at 0s, lost at 10s
             return max(0.0, 1.0 - (loss_time / 10.0))
+
         return 1.0
 
     # ─── Private: Fusion ─────────────────────────────────────────────
 
     def _weighted_fuse(
         self,
-        v_emo: EmotionCategory,
-        s_emo: EmotionCategory,
-        e_emo: EmotionCategory,
+        v_emo: Optional[EmotionCategory],
+        s_emo: Optional[EmotionCategory],
+        e_emo: Optional[EmotionCategory],
         attention: float,
-    ) -> tuple[EmotionCategory, float]:
+    ) -> tuple[EmotionCategory, float, Dict[str, float]]:
         """
-        Weighted fusion of three modality emotions.
+        Weighted fusion of the modalities that actually produced a signal.
 
-        Returns (category, confidence).
+        缺失的模态（None）权重直接置零，剩余权重重新归一化，
+        避免"没人说话"被当作一个真实的 neutral 投票。
+
+        Returns:
+            (category, confidence, effective_weights)
         """
-        # Score each category across modalities
-        scores: Dict[EmotionCategory, float] = {}
-        total_weight = 0.0
-
-        for emo, weight_key in [
+        modalities = [
             (v_emo, "vision"),
             (s_emo, "speech"),
             (e_emo, "environment"),
-        ]:
-            w = self.weights[weight_key]
+        ]
+
+        # 只保留本轮有信号的模态
+        present = [
+            (emo, self.weights.get(key, 0.0))
+            for emo, key in modalities
+            if emo is not None
+        ]
+
+        total_weight = sum(w for _, w in present)
+        if not present or total_weight <= 0:
+            # 没有任何模态有信号 → 只能给出中性的低置信度猜测
+            return EmotionCategory.NEUTRAL, 0.3, {}
+
+        # 各情绪类别的加权得分
+        scores: Dict[EmotionCategory, float] = {}
+        for emo, w in present:
             scores[emo] = scores.get(emo, 0.0) + w
-            total_weight += w
 
-        # Find the dominant emotion
-        if not scores:
-            return EmotionCategory.NEUTRAL, 0.5
+        # 得分最高者胜出（并列时保持插入顺序，即视觉优先）
+        dominant = max(scores, key=lambda k: scores[k])
+        raw_confidence = scores[dominant] / total_weight
 
-        dominant = max(scores, key=scores.get)  # type: ignore[arg-type]
-        raw_confidence = scores[dominant] / total_weight if total_weight > 0 else 0.5
+        # 一致度加成：多个模态指向同一情绪时更可信
+        agreement_count = sum(1 for emo, _ in present if emo == dominant)
+        agreement_bonus = (agreement_count - 1) * 0.15
 
-        # Agreement bonus: if multiple modalities agree, boost confidence
-        agreement_count = sum(
-            1 for e in [v_emo, s_emo, e_emo] if e == dominant
-        )
-        agreement_bonus = (agreement_count - 1) * 0.15  # +0.15 per agreeing modality
+        # 证据数量校正：仅 1 个模态时天然证据不足
+        evidence_factor = {1: 0.75, 2: 0.90}.get(len(present), 1.0)
 
-        # Attention penalty: low attention reduces confidence
+        # 注意力惩罚：孩子没在看，读数可信度下降
         attention_penalty = (1.0 - attention) * 0.2
 
-        confidence = min(1.0, max(0.0, raw_confidence + agreement_bonus - attention_penalty))
+        confidence = raw_confidence * evidence_factor + agreement_bonus - attention_penalty
+        confidence = min(1.0, max(0.0, confidence))
 
-        # Special ASD rule: if vision says anxious/distressed, trust it more
-        if v_emo in (EmotionCategory.ANXIOUS, EmotionCategory.DISTRESSED, EmotionCategory.FEARFUL):
+        # 特殊 ASD 安全规则：视觉读到焦虑/恐惧时优先采信
+        # （DISTRESSED 由环境通道 bio_anxiety 产生，不来自视觉，故不在此列）
+        if v_emo in ASD_VISION_PRIORITY:
             if confidence < 0.6:
                 dominant = v_emo
                 confidence = max(confidence, 0.6)
 
-        return dominant, confidence
+        effective_weights = {
+            key: self.weights.get(key, 0.0) / total_weight
+            for emo, key in modalities
+            if emo is not None
+        }
+
+        return dominant, confidence, effective_weights
 
     # ─── Private: Memory Context ─────────────────────────────────────
 
@@ -332,7 +433,7 @@ class FusionEngine:
         # Speech-based cause
         text = speech_state.get("text", "")
         if s_emo == fused and text:
-            causes.append(f"语音语调分析")
+            causes.append("语音语调分析")
 
         # Environment-based cause
         if e_emo in (EmotionCategory.ANXIOUS, EmotionCategory.DISTRESSED):

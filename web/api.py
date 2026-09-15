@@ -36,17 +36,26 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from config import CORS_ORIGINS, DASHBOARD_HOST, DASHBOARD_PORT
+
+APP_VERSION = "1.1.0"
+
 app = FastAPI(
     title="小予情绪智能仪表板",
     description="SoulCompanion AI - ASD儿童多模态情绪智能监控系统",
-    version="1.0.0",
+    version=APP_VERSION,
 )
 
-# CORS for local development
+# ─── CORS ─────────────────────────────────────────────────────────────
+# 默认只放行本机来源。注意：allow_origins=["*"] 与 allow_credentials=True
+# 是互斥的（浏览器会直接拒绝该组合），因此在通配模式下强制关闭凭证。
+_origins = [o.strip() for o in (CORS_ORIGINS or "").split(",") if o.strip()]
+_wildcard = "*" in _origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if _wildcard else _origins,
+    allow_credentials=not _wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -254,8 +263,8 @@ async def get_valence_series(days: int = 7):
 @app.get("/api/behavior/status")
 async def get_behavior_status():
     """Get current behavior engine status."""
-    if _has_bridge():
-        return _embodied().get_status()
+    # 无论是否接入桥接器，行为引擎实例都从 _embodied() 取（桥接模式下
+    # 它会返回桥接器内部的那一份），因此无需分支。
     return _embodied().get_status()
 
 
@@ -404,7 +413,7 @@ async def get_system_status():
             "embodied_engine": True,
             "intervention_engine": True,
         },
-        "version": "1.0.0",
+        "version": APP_VERSION,
     }
 
 
@@ -506,4 +515,7 @@ async def skill_dashboard_layout():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # 默认只绑定本机：看板上是儿童的情绪数据，不应默认暴露到局域网。
+    # 需要局域网访问时用 `python -m web.app --host 0.0.0.0` 显式开启。
+    uvicorn.run(app, host=DASHBOARD_HOST, port=DASHBOARD_PORT)

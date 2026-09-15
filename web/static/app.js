@@ -8,7 +8,59 @@ const CONFIG = {
     refreshInterval: 1000,  // ms between data fetches
     chartPoints: 50,        // max points on valence chart
     apiBase: '',            // same origin
+    demoFallback: true,     // 后端不可用且允许回退时 → 自动切换演示数据
+    demoForced: false,      // ?demo=1 强制演示模式
 };
+
+// ─── Demo Mode State ─────────────────────────────────────────────────
+// 演示模式一旦开启便不再关闭（避免每轮刷新反复抖动/闪回空白）。
+let demoMode = false;
+
+/** 演示引擎是否可用（demo-data.js 已加载且暴露了 get()）。 */
+function demoAvailable() {
+    return typeof window !== 'undefined'
+        && window.SoulCompanionDemo
+        && typeof window.SoulCompanionDemo.get === 'function'
+        && (typeof window.SoulCompanionDemo.isActive !== 'function'
+            || window.SoulCompanionDemo.isActive());
+}
+
+/** 读取 URL 参数覆盖：?demo=1 强制演示，?nodemo=1 关闭回退。 */
+function parseUrlFlags() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('demo') === '1') {
+            CONFIG.demoForced = true;
+            CONFIG.demoFallback = true;
+        }
+        if (params.get('nodemo') === '1') {
+            CONFIG.demoForced = false;
+            CONFIG.demoFallback = false;
+        }
+    } catch (e) {
+        console.warn('URL 参数解析失败，使用默认配置', e);
+    }
+}
+
+/** 显示醒目的演示数据徽章（绝不静默拿假数据冒充真实儿童数据）。 */
+function showDemoBadge() {
+    const badge = document.getElementById('demo-badge');
+    if (badge) badge.style.display = 'inline-flex';
+
+    // 页脚状态文案 + 隐藏 API 文档链接（静态站没有 /docs）
+    const modeText = document.getElementById('footer-mode');
+    if (modeText) modeText.textContent = '演示模式（合成数据）';
+    const docLink = document.getElementById('api-doc-link');
+    if (docLink) docLink.style.display = 'none';
+}
+
+/** 切换到演示模式（幂等，只切一次）。 */
+function enableDemoMode() {
+    if (demoMode) return;
+    demoMode = true;
+    showDemoBadge();
+    console.warn('⚠️ 后端未连接，已切换到演示数据模式（合成数据，非真实儿童数据）');
+}
 
 // ─── Emotion Mapping ─────────────────────────────────────────────────
 const EMOTION_MAP = {
@@ -41,14 +93,31 @@ const ACTION_LABELS = {
 let currentDays = 1;
 let valenceData = [];
 
-// ─── Fetch Helper ────────────────────────────────────────────────────
+// ─── Fetch Helper (双模式) ───────────────────────────────────────────
+// 1) 已进入演示模式 → 直接返回演示数据；
+// 2) ?demo=1 强制演示 → 切演示并返回；
+// 3) 否则正常 fetch；失败或非 2xx 且 demoFallback 为真 → 切演示（只切一次）；
+// 4) demoFallback 为假 → 维持现状返回 null。
 async function fetchJSON(url) {
+    if (demoMode && demoAvailable()) {
+        return window.SoulCompanionDemo.get(url);
+    }
+
+    if (CONFIG.demoForced && demoAvailable()) {
+        enableDemoMode();
+        return window.SoulCompanionDemo.get(url);
+    }
+
     try {
         const res = await fetch(CONFIG.apiBase + url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
     } catch (e) {
         console.error(`Fetch failed: ${url}`, e);
+        if (CONFIG.demoFallback && demoAvailable()) {
+            enableDemoMode();
+            return window.SoulCompanionDemo.get(url);
+        }
         return null;
     }
 }
@@ -311,8 +380,24 @@ async function updateParentPanel() {
 
 // ─── System Status ───────────────────────────────────────────────────
 async function updateSystemStatus() {
-    const data = await fetchJSON('/api/system/status');
     const dot = document.getElementById('system-status');
+    if (!dot) return;
+
+    // 演示模式：状态点置离线，明确说明这是演示数据
+    if (demoMode) {
+        dot.classList.add('offline');
+        dot.title = '演示模式 - 后端未连接，展示合成数据';
+        return;
+    }
+
+    const data = await fetchJSON('/api/system/status');
+    // 若本轮因回退切到了演示模式，按演示模式处理
+    if (demoMode) {
+        dot.classList.add('offline');
+        dot.title = '演示模式 - 后端未连接，展示合成数据';
+        return;
+    }
+
     if (data && (data.status === 'running' || data.status === 'standalone')) {
         dot.classList.remove('offline');
         // Update title with bridge status
@@ -371,6 +456,13 @@ async function refreshAll() {
 
 // ─── Init ────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+    parseUrlFlags();
+
+    // ?demo=1：启动时立即切演示并显示徽章（避免首帧空白）
+    if (CONFIG.demoForced && demoAvailable()) {
+        enableDemoMode();
+    }
+
     initTimeRangeSelector();
     initResizeHandler();
     updateTime();

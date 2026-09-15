@@ -12,6 +12,7 @@ Extends existing core/memory.py without modifying it.
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -64,7 +65,15 @@ class MemoryAxis:
 
     def _init_db(self) -> None:
         """Initialize SQLite database with emotion_records table."""
+        # 确保数据目录存在：空目录不会被 git 跟踪，新克隆的仓库没有 data/
+        db_dir = os.path.dirname(os.path.abspath(self.db_path))
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
         with sqlite3.connect(self.db_path) as conn:
+            # WAL 模式允许"写入线程"与"读取线程"并发，避免看板查询被写入阻塞
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute(_CREATE_TABLE)
             for idx_sql in _CREATE_INDEXES:
                 conn.execute(idx_sql)

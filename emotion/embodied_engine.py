@@ -10,13 +10,15 @@ Executes BehaviorCommands as physical/virtual robot actions:
 
 Hardware-abstracted: works with or without physical hardware.
 Falls back to console logging when no hardware is present.
+
+说明：本引擎采用"即时派发"模型，不会为持续动作额外创建后台线程。
+持续类动作（心跳、呼吸灯）在硬件模式下由固件自行维持节律，
+模拟模式下仅输出日志用于联调。
 """
 from __future__ import annotations
 
 import logging
-import math
 import threading
-import time
 from typing import Optional
 
 from emotion.models import BehaviorAction, BehaviorCommand
@@ -54,7 +56,7 @@ class EmbodiedEngine:
         self.hardware_available = hardware_available
         self._running = True
         self._current_action: Optional[BehaviorAction] = None
-        self._action_thread: Optional[threading.Thread] = None
+        self._last_signature: Optional[tuple] = None
         self._lock = threading.Lock()
 
         # Hardware interface (lazy-loaded)
@@ -82,8 +84,8 @@ class EmbodiedEngine:
         """
         Execute a BehaviorCommand.
 
-        Starts background threads for continuous actions (heartbeat, breathing)
-        and executes discrete actions (head tilt, ear wiggle) immediately.
+        高优先级指令会先中断当前动作；随后逐条即时派发离散动作。
+        持续类动作（心跳/呼吸灯）由硬件层维持，这里不做动画循环。
 
         Args:
             command: BehaviorCommand to execute
@@ -95,15 +97,31 @@ class EmbodiedEngine:
         for action in command.actions:
             self._dispatch_action(action, command)
 
-        # Log the behavior for monitoring
-        logger.info(
-            f"🎬 [行为执行] {', '.join(a.value for a in command.actions)} "
-            f"| LED={command.led_color} 亮度={command.led_brightness} "
-            f"| 语速={command.speech_rate} | 原因: {command.reason}"
+        if command.actions:
+            self._current_action = command.actions[0]
+
+        # 桥接器每 0.5s 调一次，只在指令真正变化时输出 INFO，避免日志刷屏
+        signature = (
+            tuple(a.value for a in command.actions),
+            command.led_color,
+            round(command.led_brightness, 2),
+            round(command.speech_rate, 2),
+            command.reason,
         )
+        if command.actions and signature != self._last_signature:
+            self._last_signature = signature
+            logger.info(
+                f"🎬 [行为执行] {', '.join(a.value for a in command.actions)} "
+                f"| LED={command.led_color} 亮度={command.led_brightness:.0%} "
+                f"| 语速={command.speech_rate} | 原因: {command.reason}"
+            )
 
     def _dispatch_action(self, action: BehaviorAction, command: BehaviorCommand) -> None:
         """Dispatch a single action to the appropriate handler."""
+        # 三种 LED 动作共用同一个处理器：具体的色温/亮度已经编码在
+        # command.led_color / led_brightness 里，无需重复实现。
+        led = lambda: self._led_control(command.led_color, command.led_brightness)  # noqa: E731
+
         handlers = {
             BehaviorAction.HEARTBEAT: self._heartbeat,
             BehaviorAction.BREATHING_LED: self._breathing_led,
@@ -113,9 +131,9 @@ class EmbodiedEngine:
             BehaviorAction.EXCITED_VOICE: lambda: self._voice_modulation(command.speech_rate),
             BehaviorAction.SLOW_MOTION: lambda: self._motion_control(command.servo_speed),
             BehaviorAction.STILL: self._still_mode,
-            BehaviorAction.LED_WARM: lambda: self._led_control(command.led_color, command.led_brightness),
-            BehaviorAction.LED_COOL: lambda: self._led_control(command.led_color, command.led_brightness),
-            BehaviorAction.LED_DIM: lambda: self._led_control(command.led_color, command.led_brightness),
+            BehaviorAction.LED_WARM: led,
+            BehaviorAction.LED_COOL: led,
+            BehaviorAction.LED_DIM: led,
         }
 
         handler = handlers.get(action)
@@ -125,7 +143,7 @@ class EmbodiedEngine:
             except Exception as e:
                 logger.error(f"❌ [行为执行] {action.value} 失败: {e}")
 
-    # ─── Continuous Actions (run in background threads) ───────────────
+    # ─── 动作实现（模拟模式走 DEBUG 日志，避免每轮刷屏）─────────────────
 
     def _heartbeat(self) -> None:
         """Simulate heartbeat with vibration motor pattern."""
@@ -133,14 +151,14 @@ class EmbodiedEngine:
             self._actuator.perform_action("心跳模拟")
         else:
             # Simulation: log heartbeat pattern
-            logger.info("💓 [心跳] 72bpm 安抚节律启动")
+            logger.debug("💓 [心跳] 72bpm 安抚节律启动")
 
     def _breathing_led(self) -> None:
         """Start breathing LED pattern (slow sine wave brightness)."""
         if self.hardware_available and self._actuator:
             self._actuator.set_led("breathing")
         else:
-            logger.info("💡 [呼吸灯] 缓慢呼吸灯模式启动")
+            logger.debug("💡 [呼吸灯] 缓慢呼吸灯模式启动")
 
     # ─── Discrete Actions ─────────────────────────────────────────────
 
@@ -149,34 +167,34 @@ class EmbodiedEngine:
         if self.hardware_available and self._actuator:
             self._actuator.perform_action("动耳朵")
         else:
-            logger.info("👂 [耳朵] 可爱耳朵摆动")
+            logger.debug("👂 [耳朵] 可爱耳朵摆动")
 
     def _head_tilt(self) -> None:
         """Execute head tilt to show curiosity/engagement."""
         if self.hardware_available and self._actuator:
             self._actuator.perform_action("歪头15度")
         else:
-            logger.info("🤔 [头部] 好奇歪头 15°")
+            logger.debug("🤔 [头部] 好奇歪头 15°")
 
     def _voice_modulation(self, rate: float) -> None:
         """Modulate speech rate for emotional expression."""
         # This is applied by the TTS engine via the command's speech_rate
-        logger.info(f"🗣️ [语音] 语速调整至 {rate:.1f}x")
+        logger.debug(f"🗣️ [语音] 语速调整至 {rate:.1f}x")
 
     def _motion_control(self, speed: float) -> None:
         """Control overall motion speed."""
-        logger.info(f"🦽 [运动] 动作速度调整至 {speed:.1f}")
+        logger.debug(f"🦽 [运动] 动作速度调整至 {speed:.1f}")
 
     def _still_mode(self) -> None:
         """Enter still mode - minimize all movement (reduce stimuli)."""
-        logger.info("🧊 [静止] 进入静止模式，减少刺激")
+        logger.debug("🧊 [静止] 进入静止模式，减少刺激")
 
     def _led_control(self, color: str, brightness: float) -> None:
         """Set LED color and brightness."""
         if self.hardware_available and self._actuator:
             self._actuator.set_led(color)
         else:
-            logger.info(f"💡 [灯光] LED={color} 亮度={brightness:.0%}")
+            logger.debug(f"💡 [灯光] LED={color} 亮度={brightness:.0%}")
 
     # ─── Utility ──────────────────────────────────────────────────────
 
@@ -184,7 +202,7 @@ class EmbodiedEngine:
         """Stop any currently running continuous actions."""
         with self._lock:
             self._current_action = None
-        logger.info("⏹️ [行为] 停止当前动作 (高优先级中断)")
+        logger.debug("⏹️ [行为] 停止当前动作 (高优先级中断)")
 
     def stop(self) -> None:
         """Shutdown the embodied engine."""

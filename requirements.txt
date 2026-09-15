@@ -1,1 +1,26 @@
+# SoulCompanion AI - 运行时依赖
+# 安装：pip install -r requirements.txt
+#
+# 注意：numpy 必须 <2.0，opencv / onnxruntime / vosk 等二进制轮子
+# 目前尚未全部适配 numpy 2.x 的 ABI。
+
+# ── 基础 ─────────────────────────────────────────────────────────────
+numpy<2.0.0
+requests
+
+# ── 视觉（人脸 / 表情）─────────────────────────────────────────────────
+opencv-python
+onnxruntime
+
+# ── 语音（离线识别 + 语音情感识别）───────────────────────────────────
+vosk
+pyaudio
+transformers
+torch
+
+# ── 语音合成 ─────────────────────────────────────────────────────────
+pyttsx3
+
+# ── Web 仪表板（FastAPI + Streamlit 两种部署方式）─────────────────────
+-r requirements-web.txt
 streamlit

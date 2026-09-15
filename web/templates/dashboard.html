@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>小予情绪智能仪表板 | SoulCompanion AI</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -12,6 +13,8 @@
         <div class="header-left">
             <h1>💠 小予情绪智能仪表板</h1>
             <span class="subtitle">SoulCompanion AI - ASD儿童多模态情绪监控</span>
+            <!-- 演示数据徽章：默认隐藏，进入演示模式时由 app.js 显示 -->
+            <span class="demo-badge" id="demo-badge" style="display:none">⚠️ 演示数据（后端未连接）</span>
         </div>
         <div class="header-right">
             <span class="status-dot" id="system-status"></span>
@@ -175,10 +178,12 @@
 
     <!-- Footer -->
     <footer class="dashboard-footer">
-        <span>SoulCompanion AI v1.0.0 | ASD儿童智能陪伴干预机器人</span>
-        <span>实时刷新中 | <a href="/docs" target="_blank">API文档</a></span>
+        <span>SoulCompanion AI v1.1.0 | ASD儿童智能陪伴干预机器人</span>
+        <span id="footer-mode">实时刷新中 | <a href="/docs" target="_blank" id="api-doc-link">API文档</a></span>
     </footer>
 
+    <!-- demo-data.js 必须在 app.js 之前加载：app.js 依赖 window.SoulCompanionDemo -->
+    <script src="/static/demo-data.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

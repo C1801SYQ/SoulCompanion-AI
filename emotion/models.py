@@ -51,6 +51,14 @@ class InterventionType(str, Enum):
     NONE = "none"                          # No intervention needed
 
 
+# ─── Shared Thresholds ─────────────────────────────────────────────────
+# 注意力阈值：低于此值视为"注意力不足"。
+# R12 修复：behavior_sync 与 intervention 此前各写一份字面量 0.3，
+# 存在失配风险。此处作为唯一数据源（Single Source of Truth），
+# 两个模块均从此处 import，确保阈值永远一致。
+ATTENTION_THRESHOLD_LOW = 0.3
+
+
 @dataclass(frozen=True)
 class EmotionState:
     """

@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 
 from emotion.memory_axis import MemoryAxis
 from emotion.models import (
+    ATTENTION_THRESHOLD_LOW,
     EmotionCategory,
     EmotionState,
     EmotionTrend,
@@ -98,8 +99,13 @@ INTERVENTION_THRESHOLDS = {
 }
 
 # Attention thresholds
-ATTENTION_THRESHOLD_LOW = 0.3
+# R12：LOW 阈值改由 emotion.models 统一提供（此处保留模块级同名别名，
+# 以兼容既有 `from emotion.intervention import ATTENTION_THRESHOLD_LOW` 引用）。
 ATTENTION_THRESHOLD_CRITICAL = 0.1
+
+# 高紧急度干预（安全相关：过载 / 恐惧）。
+# 这类干预必须能"插队"，不能被普通冷却窗口挡掉。
+URGENT_URGENCIES = {"high"}
 
 
 class InterventionEngine:
@@ -121,15 +127,20 @@ class InterventionEngine:
         self._last_plan = InterventionPlan()
         self._intervention_count = 0
         self._last_intervention_time: Optional[datetime] = None
+        self._last_urgency: str = "low"
 
-        # Cooldown: minimum seconds between interventions
+        # 冷却窗口：普通干预 30s，高紧急度干预仅 8s
         self.cooldown_seconds = 30
+        self.urgent_cooldown_seconds = 8
 
         logger.info("✅ [干预引擎] 教育型干预系统已就绪")
 
     def evaluate(self, state: EmotionState, context: str = "") -> InterventionPlan:
         """
         Evaluate the current emotional state and generate an intervention plan.
+
+        注意：冷却判定在"生成计划之后"，因为是否需要插队取决于本次干预的
+        紧急度（urgency），而不是上一次干预的时间。
 
         Args:
             state: Current fused EmotionState
@@ -138,17 +149,21 @@ class InterventionEngine:
         Returns:
             InterventionPlan with guidance text and type
         """
-        # Check cooldown
-        if self._is_in_cooldown():
-            return InterventionPlan(intervention_type=InterventionType.NONE)
-
-        # Evaluate intervention need
         plan = self._evaluate_intervention(state, context)
 
-        if plan.intervention_type != InterventionType.NONE:
-            self._last_plan = plan
-            self._intervention_count += 1
-            self._last_intervention_time = datetime.now()
+        if plan.intervention_type == InterventionType.NONE:
+            return plan
+
+        urgency = str(plan.metadata.get("urgency", "low"))
+
+        # 冷却期内的干预被抑制（高紧急度干预拥有独立的短冷却窗口）
+        if self._is_in_cooldown(urgency):
+            return InterventionPlan(intervention_type=InterventionType.NONE)
+
+        self._last_plan = plan
+        self._intervention_count += 1
+        self._last_intervention_time = datetime.now()
+        self._last_urgency = urgency
 
         return plan
 
@@ -257,11 +272,32 @@ class InterventionEngine:
         responses = GUIDED_RESPONSES.get(category, GUIDED_RESPONSES[EmotionCategory.NEUTRAL])
         return random.choice(responses)
 
-    def _is_in_cooldown(self) -> bool:
-        """Check if we're still in cooldown period."""
+    def _is_in_cooldown(self, urgency: str = "low") -> bool:
+        """
+        检查是否处于冷却期（语义与 R11 完全等价，仅去掉死分支）。
+
+        判定规则：
+        - 高紧急度（high）：只受 ``urgent_cooldown_seconds`` 约束，保证过载/恐惧
+          能及时插队普通冷却，得到安抚；
+        - 其余（含"上次为高紧急度、本次低优先级"）：一律受完整
+          ``cooldown_seconds`` 约束。后者需要等满完整冷却，避免打断正在进行的
+          安抚过程。
+
+        说明：原实现中"上次为高紧急度"与"其余"两个分支返回值完全相同
+        （都等价于 ``elapsed < cooldown_seconds``），``self._last_urgency``
+        判断形同虚设。R12 合并为单一路径——行为不变，语义更清晰。
+        """
         if self._last_intervention_time is None:
             return False
+
         elapsed = (datetime.now() - self._last_intervention_time).total_seconds()
+
+        # 高紧急度干预：拥有独立的短冷却窗口，可插队普通冷却
+        if urgency in URGENT_URGENCIES:
+            return elapsed < self.urgent_cooldown_seconds
+
+        # 其余情况：一律等满完整冷却窗口
+        # （含"上次为高紧急度"的低优先级干预，需保护正在进行的安抚）
         return elapsed < self.cooldown_seconds
 
     def get_last_plan(self) -> InterventionPlan:
