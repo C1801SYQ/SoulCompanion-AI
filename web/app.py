@@ -19,12 +19,21 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def main():
+def build_parser():
+    from config import DASHBOARD_HOST, DASHBOARD_PORT
+
     parser = argparse.ArgumentParser(description="小予情绪智能仪表板")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    parser.add_argument("--host", default=DASHBOARD_HOST, help="Bind host (default: configured host)")
+    parser.add_argument("--port", type=int, default=DASHBOARD_PORT, help="Port (default: configured port)")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
 
     try:
         import uvicorn

@@ -29,7 +29,7 @@ from typing import Optional
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -198,7 +198,8 @@ async def get_current_emotion():
 
 
 @app.get("/api/emotion/history")
-async def get_emotion_history(limit: int = 50, offset: int = 0):
+async def get_emotion_history(limit: int = Query(50, ge=1, le=500),
+                              offset: int = Query(0, ge=0, le=1000000)):
     """Get emotion history records."""
     records = _memory().get_records(limit=limit, offset=offset)
     return {
@@ -235,21 +236,21 @@ async def get_emotion_trends(period: str = "daily"):
 
 
 @app.get("/api/emotion/periodicity")
-async def get_emotion_periodicity(lookback_days: int = 30):
+async def get_emotion_periodicity(lookback_days: int = Query(30, ge=1, le=365)):
     """Get emotion periodicity patterns."""
     patterns = _memory().detect_periodicity(lookback_days=lookback_days)
     return {"patterns": patterns, "lookback_days": lookback_days}
 
 
 @app.get("/api/emotion/counts")
-async def get_emotion_counts(days: int = 7):
+async def get_emotion_counts(days: int = Query(7, ge=1, le=365)):
     """Get emotion category counts."""
     counts = _memory().get_emotion_counts(days=days)
     return {"counts": counts, "days": days}
 
 
 @app.get("/api/emotion/valence-series")
-async def get_valence_series(days: int = 7):
+async def get_valence_series(days: int = Query(7, ge=1, le=365)):
     """Get timestamped valence series for charting."""
     series = _memory().get_valence_series(days=days)
     return {
@@ -291,7 +292,7 @@ async def get_behavior_command():
 # ─── Parent Report API ───────────────────────────────────────────────
 
 @app.get("/api/parent/report")
-async def get_parent_report(days: int = 7):
+async def get_parent_report(days: int = Query(7, ge=1, le=365)):
     """Get parent report as JSON."""
     report = _intervention().generate_parent_report(days=days)
     return {
@@ -313,7 +314,7 @@ async def get_parent_report(days: int = 7):
 
 
 @app.get("/api/parent/report.md", response_class=PlainTextResponse)
-async def get_parent_report_markdown(days: int = 7):
+async def get_parent_report_markdown(days: int = Query(7, ge=1, le=365)):
     """Get parent report as Markdown."""
     return _intervention().generate_parent_report_markdown(days=days)
 
@@ -392,6 +393,12 @@ async def get_bridge_status():
 
 
 # ─── System Status API ───────────────────────────────────────────────
+
+@app.get("/healthz")
+async def healthz():
+    """Process liveness only; does not initialize models, hardware, or storage."""
+    return {"status": "ok", "version": APP_VERSION}
+
 
 @app.get("/api/system/status")
 async def get_system_status():
