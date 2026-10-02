@@ -1,111 +1,175 @@
-import cv2
-import numpy as np
+"""Camera adapter with explicit device/model health and fresh observations."""
+from __future__ import annotations
+
+import logging
+import os
 import threading
 import time
-import os
-import sys
+from datetime import datetime
 
-# Fix Windows console encoding for emoji support
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+from config import HAAR_PATH, VISION_MODEL_PATH
+
+logger = logging.getLogger("VisionEngine")
 
 
 class VisionEngine:
-    def __init__(self, model_path="models/onnx_model.onnx"):
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        xml_path = os.path.join(base_dir, "models", "haarcascade_frontalface_default.xml")
-        onnx_full_path = os.path.join(base_dir, model_path)
-
-        self.face_cascade = cv2.CascadeClassifier(xml_path)
-        self.last_frame = None  # 核心：用于存储最新的一帧画面
-
-        if self.face_cascade.empty():
-            print(f"❌ [严重错误] 找不到 XML！")
-        else:
-            print(f"✅ [视觉引擎] 人脸检测器已就绪")
-
-        self.model_loaded = False
-        try:
-            if os.path.exists(onnx_full_path):
-                self.net = cv2.dnn.readNetFromONNX(onnx_full_path)
-                self.model_loaded = True
-                print(f"✅ [视觉引擎] 情绪识别模型已就绪")
-        except Exception as e:
-            print(f"❌ [错误] 模型初始化失败: {e}")
-
-        self.emotion_labels = ['angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral']
-        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        self.current_state = {"face_detected": False, "emotion": "neutral", "attention_loss_time": 0.0}
+    def __init__(self, model_path=None, *, haar_path=None, cv_backend=None, camera_factory=None):
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._components = {}
+        self._last_warning = 0.0
+        self.cap = self.thread = self.last_frame = None
+        self.current_state = {}
+        self.model_loaded = self.is_running = False
         self.last_face_time = time.time()
-        self.is_running = True
+        for name in ("camera", "vision_model"):
+            self._status(name, "unknown", "Not initialized")
+        try:
+            if cv_backend is None:
+                import cv2
+                cv_backend = cv2
+            self.cv = cv_backend
+        except ImportError as exc:
+            self._failure("camera", "Vision dependency unavailable", exc)
+            self._status("vision_model", "unavailable", "Vision dependency unavailable")
+            return
+        try:
+            self.face_cascade = self.cv.CascadeClassifier(haar_path or HAAR_PATH)
+            self._haar_ready = not self.face_cascade.empty()
+        except Exception as exc:
+            self._haar_ready = False
+            self._warning("face_detector_failed", exc)
+        path = model_path or VISION_MODEL_PATH
+        try:
+            if not os.path.isfile(path):
+                raise FileNotFoundError("Vision model missing")
+            self.net = self.cv.dnn.readNetFromONNX(path)
+            self.model_loaded = True
+            self._status("vision_model", "healthy", "ONNX model loaded")
+        except Exception as exc:
+            self._failure("vision_model", "Vision model missing or invalid", exc)
+        if not self._haar_ready:
+            self._status("vision_model", "degraded", "Face detector missing or invalid")
+        try:
+            if camera_factory is None:
+                backend = self.cv.CAP_DSHOW if os.name == "nt" else self.cv.CAP_ANY
+                self.cap = self.cv.VideoCapture(0, backend)
+            else:
+                self.cap = camera_factory()
+            if not self.cap.isOpened():
+                raise OSError("Camera could not be opened")
+            self._status("camera", "degraded", "Camera opened; awaiting a frame")
+            self.is_running = True
+            self.thread = threading.Thread(target=self._process_video, daemon=True, name="VisionEngine")
+            self.thread.start()
+        except Exception as exc:
+            self._failure("camera", "Camera unavailable", exc)
+            self.stop()
 
-        self.thread = threading.Thread(target=self._process_video, daemon=True)
-        self.thread.start()
+    def _status(self, component, status, reason):
+        with self._lock:
+            self._components[component] = {"status": status, "reason": reason, "checked_at": datetime.now().isoformat()}
+
+    def _warning(self, code, exc):
+        now = time.monotonic()
+        if now - self._last_warning >= 5.0:
+            logger.warning("%s type=%s", code, type(exc).__name__)
+            self._last_warning = now
+
+    def _failure(self, component, reason, exc):
+        self._status(component, "unavailable", reason)
+        self._warning(component + "_failed", exc)
 
     def _process_video(self):
         frame_count = 0
-        while self.is_running:
-            ret, frame = self.cap.read()
-            if not ret:
-                time.sleep(0.1)
-                continue
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        raise OSError("Frame read failed")
+                    captured_at = time.time()
+                    with self._lock:
+                        self.last_frame = frame
+                    self._status("camera", "healthy", "Camera is producing frames")
+                    if not self._haar_ready:
+                        self._stop_event.wait(0.1)
+                        continue
+                    frame_count += 1
+                    small = self.cv.resize(frame, (0, 0), fx=0.5, fy=0.5)
+                    gray = self.cv.cvtColor(small, self.cv.COLOR_BGR2GRAY)
+                    faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
+                    with self._lock:
+                        state = self.current_state.copy()
+                    state.update(captured_at=captured_at, observation_available=True)
+                    if len(faces) > 0:
+                        state.update(face_detected=True, attention_loss_time=0.0)
+                        self.last_face_time = captured_at
+                        if self.model_loaded and (frame_count % 3 == 0 or not state.get("emotion")):
+                            try:
+                                x, y, w, h = max(faces, key=lambda face: face[2] * face[3])
+                                roi = self.cv.resize(gray[y:y + h, x:x + w], (48, 48))
+                                blob = self.cv.dnn.blobFromImage(roi, 1.0 / 255.0, (48, 48), (0, 0, 0), swapRB=False)
+                                self.net.setInput(blob)
+                                predictions = self.net.forward()[0]
+                                index = max(range(len(predictions)), key=lambda item: predictions[item])
+                                raw = ['angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral'][index]
+                                state["emotion"] = {"happy": "happy", "surprise": "happy", "sad": "sad", "angry": "anxious", "fear": "anxious", "disgust": "anxious", "neutral": "neutral"}[raw]
+                                self._status("vision_model", "healthy", "ONNX inference succeeded")
+                            except Exception as exc:
+                                state["emotion"] = ""
+                                state["observation_available"] = False
+                                self._status("vision_model", "degraded", "Vision inference failed")
+                                self._warning("vision_inference_failed", exc)
+                        elif not self.model_loaded:
+                            state["emotion"] = ""
+                            state["observation_available"] = False
+                    else:
+                        state.update(face_detected=False, emotion="", attention_loss_time=round(captured_at - self.last_face_time, 1))
+                    with self._lock:
+                        self.current_state = state
+                except Exception as exc:
+                    with self._lock:
+                        self.current_state = {}
+                        self.last_frame = None
+                    self._status("camera", "degraded", "Frame capture or processing failed")
+                    self._warning("frame_processing_failed", exc)
+                    self._stop_event.wait(0.1)
+                self._stop_event.wait(0.01)
+        finally:
+            self.is_running = False
 
-            # --- 关键修复：将实时画面存入 last_frame 供 UI 调用 ---
-            self.last_frame = frame
-
-            if self.face_cascade.empty():
-                continue
-
-            frame_count += 1
-            small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-            gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
-            faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
-
-            new_state = self.current_state.copy()
-            if len(faces) > 0:
-                new_state["face_detected"] = True
-                self.last_face_time = time.time()
-                new_state["attention_loss_time"] = 0.0
-
-                if self.model_loaded and frame_count % 3 == 0:
-                    try:
-                        (x, y, w, h) = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)[0]
-                        roi = gray[y:y + h, x:x + w]
-                        roi = cv2.resize(roi, (48, 48))
-                        blob = cv2.dnn.blobFromImage(roi, 1.0 / 255.0, (48, 48), (0, 0, 0), swapRB=False)
-                        self.net.setInput(blob)
-                        preds = self.net.forward()
-                        idx = np.argmax(preds[0])
-                        raw_emotion = self.emotion_labels[idx]
-
-                        mapping = {
-                            "happy": "happy", "surprise": "happy", "sad": "sad",
-                            "angry": "anxious", "fear": "anxious", "disgust": "anxious",
-                            "neutral": "neutral"
-                        }
-                        new_state["emotion"] = mapping.get(raw_emotion, "neutral")
-                    except Exception:
-                        pass  # 单帧推理失败不影响整体，跳过
-            else:
-                new_state["face_detected"] = False
-                new_state["attention_loss_time"] = round(time.time() - self.last_face_time, 1)
-
-            self.current_state = new_state
-            time.sleep(0.01)
-
-    # --- 核心修复：添加 WebUI 需要的接口 ---
     def get_current_frame(self):
-        """安全地返回当前帧"""
-        return self.last_frame
+        with self._lock:
+            return self.last_frame.copy() if self.last_frame is not None else None
 
     def get_latest_state(self):
-        return self.current_state
+        with self._lock:
+            state = self.current_state.copy()
+        age = time.time() - state.get("captured_at", 0)
+        if not self.is_running or not state.get("observation_available") or not -1 <= age <= 2.0:
+            return {}
+        return state
+
+    def get_status(self):
+        with self._lock:
+            result = {key: value.copy() for key, value in self._components.items()}
+        if self.thread is not None and not self.thread.is_alive() and self.is_running:
+            result["camera"] = {"status": "unavailable", "reason": "Camera worker stopped", "checked_at": datetime.now().isoformat()}
+        return {"components": result, "running": bool(self.thread and self.thread.is_alive() and self.is_running)}
 
     def stop(self):
+        self._stop_event.set()
         self.is_running = False
-        if self.cap.isOpened():
-            self.cap.release()
+        if self.thread and self.thread is not threading.current_thread():
+            self.thread.join(timeout=2.0)
+        if self.cap is not None:
+            try:
+                self.cap.release()
+            except Exception as exc:
+                self._warning("camera_release_failed", exc)
+            self.cap = None
+        if self.thread and self.thread.is_alive():
+            self._status("camera", "unavailable", "Camera worker did not stop within timeout")
+        elif self._components["camera"]["status"] != "unavailable":
+            self._status("camera", "disabled", "Camera stopped")

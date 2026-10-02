@@ -7,6 +7,7 @@ from datetime import datetime
 # 确保能从项目根目录导入 config
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from config import DATABASE_PATH
+from core.memory import database_connection
 
 # 情绪归类（新旧两套表共用同一套词表）
 POSITIVE_EMOTIONS = {"happy", "calm", "surprised"}
@@ -34,7 +35,7 @@ class ReportGenerator:
         优先读取新情绪管线的 emotion_records 表；若该表不存在或当天没有数据，
         再回退到旧版 logs 表（由 core/memory.py 写入），保证两条数据链路都能出报告。
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             if self._has_table(conn, "emotion_records"):
                 rows = conn.execute(
                     """SELECT timestamp, source_text, category, valence

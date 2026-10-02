@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from datetime import datetime
 from typing import Optional
 
 from emotion.models import BehaviorAction, BehaviorCommand
@@ -54,6 +55,7 @@ class EmbodiedEngine:
                                If False, use simulation/logging only.
         """
         self.hardware_available = hardware_available
+        self._hardware_requested = hardware_available
         self._running = True
         self._current_action: Optional[BehaviorAction] = None
         self._last_signature: Optional[tuple] = None
@@ -67,15 +69,19 @@ class EmbodiedEngine:
 
         logger.info(
             f"✅ [拟人引擎] 行为仿真引擎已就绪 "
-            f"({'硬件模式' if hardware_available else '模拟模式'})"
+            f"({'硬件模式' if self.hardware_available else '模拟模式'})"
         )
 
     def _init_hardware(self) -> None:
         """Initialize hardware interfaces if available."""
         try:
             from hardware.controllers.actuators import RobotActuator
-            self._actuator = RobotActuator()
-            logger.info("✅ [拟人引擎] 硬件控制器已连接")
+            actuator = RobotActuator()
+            if not actuator.is_real or not actuator.probe():
+                self.hardware_available = False
+                logger.warning("physical_actuator_unavailable supplied_adapter=simulated")
+                return
+            self._actuator = actuator
         except Exception as e:
             logger.warning(f"⚠️ [拟人引擎] 硬件初始化失败，回退到模拟模式: {e}")
             self.hardware_available = False
@@ -90,16 +96,8 @@ class EmbodiedEngine:
         Args:
             command: BehaviorCommand to execute
         """
-        if command.priority >= 1:
-            # High priority: stop current actions immediately
-            self._stop_current_actions()
-
-        for action in command.actions:
-            self._dispatch_action(action, command)
-
-        if command.actions:
-            self._current_action = command.actions[0]
-
+        if not self._running:
+            return
         # 桥接器每 0.5s 调一次，只在指令真正变化时输出 INFO，避免日志刷屏
         signature = (
             tuple(a.value for a in command.actions),
@@ -107,9 +105,15 @@ class EmbodiedEngine:
             round(command.led_brightness, 2),
             round(command.speech_rate, 2),
             command.reason,
+            command.priority,
         )
         if command.actions and signature != self._last_signature:
+            if command.priority >= 1:
+                self._stop_current_actions()
             self._last_signature = signature
+            for action in command.actions:
+                self._dispatch_action(action, command)
+            self._current_action = command.actions[0]
             logger.info(
                 f"🎬 [行为执行] {', '.join(a.value for a in command.actions)} "
                 f"| LED={command.led_color} 亮度={command.led_brightness:.0%} "
@@ -202,6 +206,11 @@ class EmbodiedEngine:
         """Stop any currently running continuous actions."""
         with self._lock:
             self._current_action = None
+        if self._actuator is not None:
+            try:
+                self._actuator.stop()
+            except Exception as exc:
+                logger.warning("actuator_stop_failed type=%s", type(exc).__name__)
         logger.debug("⏹️ [行为] 停止当前动作 (高优先级中断)")
 
     def stop(self) -> None:
@@ -218,6 +227,9 @@ class EmbodiedEngine:
             "hardware_available": self.hardware_available,
             "current_action": self._current_action.value if self._current_action else None,
             "running": self._running,
+            "status": "unavailable" if self._hardware_requested and not self.hardware_available else "disabled",
+            "reason": "No physical actuator adapter is installed" if self._hardware_requested else "Physical hardware disabled; behavior is simulated",
+            "checked_at": datetime.now().isoformat(),
         }
 
 

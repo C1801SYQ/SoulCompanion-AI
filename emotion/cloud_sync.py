@@ -1,11 +1,5 @@
 """
-emotion/cloud_sync.py - Cloud Data Sync for Remote Dashboard
-
-Syncs emotion state to a free cloud service so the
-Streamlit Cloud dashboard can display real-time data.
-
-Architecture:
-    Local Robot → cloud_sync.py → Cloud JSON API → Streamlit Dashboard
+Legacy local snapshot helper; remote emotion relay is disabled in this release.
 """
 from __future__ import annotations
 
@@ -15,27 +9,22 @@ import os
 import threading
 import time
 from typing import Any, Dict, Optional
-from urllib import request, error
 
 logger = logging.getLogger("CloudSync")
 
-# ─── Cloud Storage Endpoints ──────────────────────────────────────────
-# Using a free public JSON relay service
-# The robot POSTs data, the dashboard GETs it
-
-# Primary: Use a simple file-based approach with a free relay
+# Retained only to reject a previously configured remote relay explicitly.
 RELAY_URL = os.environ.get("EMOTION_RELAY_URL", "")
 
 
 class CloudSync:
     """
-    Syncs emotion data to cloud for remote dashboard access.
-
-    When RELAY_URL is set, pushes data to that endpoint.
-    Otherwise, writes to a local JSON file for same-machine access.
+    Legacy local JSON snapshot helper, unused by the product launcher.
+    Any configured remote relay is rejected before work starts.
     """
 
     def __init__(self, sync_interval: float = 3.0):
+        if RELAY_URL:
+            raise ValueError("EMOTION_RELAY_URL is unsupported: real emotion data must remain local")
         self.sync_interval = sync_interval
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -80,8 +69,8 @@ class CloudSync:
                     if data:
                         self.update(data)
                 self._push()
-            except Exception as e:
-                logger.debug(f"同步异常: {e}")
+            except Exception as exc:
+                logger.warning("legacy_snapshot_failed type=%s", type(exc).__name__)
             time.sleep(self.sync_interval)
 
     def _push(self) -> None:
@@ -101,28 +90,20 @@ class CloudSync:
         try:
             with open(self._data_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("legacy_snapshot_write_failed type=%s", type(exc).__name__)
 
     def _push_http(self, data: Dict) -> None:
-        try:
-            body = json.dumps(data).encode("utf-8")
-            req = request.Request(
-                self._relay_url,
-                data=body,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with request.urlopen(req, timeout=5):
-                pass
-        except Exception as e:
-            logger.debug(f"HTTP推送失败: {e}")
+        raise RuntimeError("Remote emotion relay is disabled in the local-only product")
 
     def read_file(self) -> Dict[str, Any]:
         try:
             with open(self._data_file, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except FileNotFoundError:
+            return {}
+        except Exception as exc:
+            logger.warning("legacy_snapshot_read_failed type=%s", type(exc).__name__)
             return {}
 
 

@@ -7,56 +7,68 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body data-mode="{{ system_mode|default('real') }}" data-demo-only="false">
+    <a class="skip-link" href="#dashboard-main">跳到主要内容</a>
     <!-- Header -->
     <header class="dashboard-header">
         <div class="header-left">
             <h1>💠 小予情绪智能仪表板</h1>
             <span class="subtitle">SoulCompanion AI - ASD儿童多模态情绪监控</span>
             <!-- 演示数据徽章：默认隐藏，进入演示模式时由 app.js 显示 -->
-            <span class="demo-badge" id="demo-badge" style="display:none">⚠️ 演示数据（后端未连接）</span>
+            <span class="demo-badge" id="demo-badge" hidden>⚠️ DEMO DATA · 合成演示数据</span>
         </div>
         <div class="header-right">
             <span class="status-dot" id="system-status"></span>
+            <span id="connection-status" role="status" aria-live="polite">正在连接后端…</span>
             <span class="timestamp" id="current-time"></span>
+            <div class="mode-controls" aria-label="数据模式">
+                <button type="button" id="mode-real" aria-pressed="true">REAL · 连接本机</button>
+                <button type="button" id="mode-demo" aria-pressed="false">DEMO · 合成演示</button>
+                <button type="button" id="retry-connection">重新连接</button>
+            </div>
         </div>
     </header>
 
-    <!-- Main Dashboard Grid -->
-    <main class="dashboard-grid">
+    <nav class="product-nav" aria-label="仪表板导航">
+        <a href="#panel-emotion">仪表板</a><a href="#panel-history">历史记录</a>
+        <a href="#panel-parent">家长报告</a><a href="#panel-system">设备状态</a><a href="#panel-settings">设置与隐私</a>
+    </nav>
+    <main class="dashboard-grid" id="dashboard-main">
         <!-- Panel 1: Emotion Live -->
-        <section class="panel panel-emotion" id="panel-emotion">
+        <section class="panel panel-emotion" id="panel-emotion" data-channel="snapshot" aria-labelledby="emotion-heading">
             <div class="panel-header">
-                <h2>🧠 实时情绪状态</h2>
+                <h2 id="emotion-heading">🧠 实时情绪状态</h2>
                 <span class="refresh-indicator" id="emotion-refresh"></span>
             </div>
             <div class="panel-body">
+                <p class="module-state" id="snapshot-state">等待实时数据</p>
                 <div class="emotion-badge" id="emotion-badge">
-                    <span class="emotion-icon" id="emotion-icon">😐</span>
-                    <span class="emotion-label" id="emotion-label">检测中...</span>
+                    <span class="emotion-icon" id="emotion-icon" aria-hidden="true">—</span>
+                    <span class="emotion-label" id="emotion-label">暂无感知数据</span>
                 </div>
                 <div class="emotion-metrics">
                     <div class="metric">
                         <label>置信度</label>
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="confidence-bar" style="width: 50%"></div>
+                        <div class="progress-bar" role="progressbar" aria-label="置信度" aria-valuemin="0" aria-valuemax="1" aria-valuetext="暂无数据">
+                            <div class="progress-fill" id="confidence-bar" style="width: 0%"></div>
                         </div>
-                        <span id="confidence-value">0.50</span>
+                        <span id="confidence-value">--</span>
                     </div>
                     <div class="metric">
                         <label>效价 (Valence)</label>
                         <div class="valence-bar">
-                            <div class="valence-indicator" id="valence-indicator"></div>
+                            <div class="valence-indicator" id="valence-indicator" hidden></div>
                         </div>
-                        <span id="valence-value">0.00</span>
+                        <span id="valence-value">--</span>
                     </div>
                     <div class="metric">
                         <label>唤醒度 (Arousal)</label>
-                        <div class="progress-bar">
-                            <div class="progress-fill arousal" id="arousal-bar" style="width: 50%"></div>
+                        <div class="progress-bar" role="progressbar" aria-label="唤醒度" aria-valuemin="0" aria-valuemax="1" aria-valuetext="暂无数据">
+                            <div class="progress-fill arousal" id="arousal-bar" style="width: 0%"></div>
                         </div>
-                        <span id="arousal-value">0.50</span>
+                        <span id="arousal-value">--</span>
                     </div>
+                    <div class="metric"><span>注意力</span><span id="attention-value">--</span></div>
                 </div>
                 <div class="emotion-sources">
                     <span class="source-tag" id="vision-source">👁️ 视觉: --</span>
@@ -64,13 +76,19 @@
                     <span class="source-tag" id="env-source">🌡️ 环境: --</span>
                 </div>
                 <div class="emotion-cause" id="emotion-cause"></div>
+                <p class="module-state" id="source-time">感知来源未就绪</p>
+                <p class="module-state" id="bridge-summary">未连接设备桥接</p>
+                <div class="risk-alert" id="risk-alert" data-risk="unknown" role="status" aria-live="polite">
+                    <span class="risk-icon" aria-hidden="true">⚠️</span>
+                    <span class="risk-text" id="risk-text">风险状态未知：尚无有效检查结果</span>
+                </div>
             </div>
         </section>
 
         <!-- Panel 2: Behavior Monitor -->
-        <section class="panel panel-behavior" id="panel-behavior">
+        <section class="panel panel-behavior" id="panel-behavior" data-channel="snapshot" aria-labelledby="behavior-heading">
             <div class="panel-header">
-                <h2>🤖 行为同步状态</h2>
+                <h2 id="behavior-heading">🤖 行为同步状态</h2>
             </div>
             <div class="panel-body">
                 <div class="behavior-actions" id="behavior-actions">
@@ -84,37 +102,41 @@
                     </div>
                     <div class="param">
                         <label>语速</label>
-                        <div class="progress-bar small">
-                            <div class="progress-fill speech" id="speech-rate-bar" style="width: 100%"></div>
+                        <div class="progress-bar small" role="progressbar" aria-label="语速" aria-valuemin="0" aria-valuemax="1.5" aria-valuetext="暂无数据">
+                            <div class="progress-fill speech" id="speech-rate-bar" style="width: 0%"></div>
                         </div>
-                        <span id="speech-rate-value">1.0x</span>
+                        <span id="speech-rate-value">--</span>
                     </div>
                     <div class="param">
                         <label>动作速度</label>
-                        <div class="progress-bar small">
-                            <div class="progress-fill servo" id="servo-speed-bar" style="width: 50%"></div>
+                        <div class="progress-bar small" role="progressbar" aria-label="动作速度" aria-valuemin="0" aria-valuemax="1" aria-valuetext="暂无数据">
+                            <div class="progress-fill servo" id="servo-speed-bar" style="width: 0%"></div>
                         </div>
-                        <span id="servo-speed-value">0.5</span>
+                        <span id="servo-speed-value">--</span>
                     </div>
                 </div>
                 <div class="behavior-reason" id="behavior-reason"></div>
+                <h3>实时引导 <span id="intervention-type">--</span></h3>
+                <p id="intervention-guidance">暂无实时干预建议</p>
             </div>
         </section>
 
         <!-- Panel 3: Emotion Timeline -->
-        <section class="panel panel-timeline" id="panel-timeline">
+        <section class="panel panel-timeline" id="panel-timeline" data-channel="analytics" aria-labelledby="timeline-heading">
             <div class="panel-header">
-                <h2>📈 情绪趋势</h2>
-                <div class="time-range-selector">
-                    <button class="range-btn active" data-days="1">1天</button>
-                    <button class="range-btn" data-days="7">7天</button>
-                    <button class="range-btn" data-days="30">30天</button>
+                <h2 id="timeline-heading">📈 情绪趋势</h2>
+                <div class="time-range-selector" aria-label="趋势与历史范围">
+                    <button type="button" class="range-btn active" data-days="1" aria-pressed="true">1天</button>
+                    <button type="button" class="range-btn" data-days="7" aria-pressed="false">7天</button>
+                    <button type="button" class="range-btn" data-days="30" aria-pressed="false">30天</button>
                 </div>
             </div>
             <div class="panel-body">
+                <p class="module-state" id="analytics-state">等待趋势数据</p>
                 <div class="chart-container">
-                    <canvas id="valence-chart"></canvas>
+                    <canvas id="valence-chart" role="img" aria-label="情绪效价随时间变化" aria-describedby="chart-description">情绪效价趋势。请阅读下方文字说明与历史记录表格。</canvas>
                 </div>
+                <p id="chart-description" class="module-state">等待趋势数据；历史表格提供文字明细。</p>
                 <div class="trend-summary" id="trend-summary">
                     <div class="trend-item">
                         <label>主导情绪</label>
@@ -138,14 +160,23 @@
         </section>
 
         <!-- Panel 4: Parent Insight -->
-        <section class="panel panel-parent" id="panel-parent">
+        <section class="panel panel-parent" id="panel-parent" data-channel="report" aria-labelledby="report-heading">
             <div class="panel-header">
-                <h2>👨‍👩‍👦 家长洞察</h2>
+                <h2 id="report-heading">👨‍👩‍👦 家长报告</h2>
             </div>
             <div class="panel-body">
+                <div class="panel-controls">
+                    <label for="report-range">报告范围</label>
+                    <select id="report-range"><option value="1">1天</option><option value="7" selected>7天</option><option value="30">30天</option></select>
+                    <button type="button" id="report-refresh">刷新报告</button>
+                    <button type="button" id="report-export">导出 Markdown</button>
+                </div>
+                <p class="module-state" id="report-state">等待报告数据</p>
+                <p class="module-state" id="report-period"></p>
+                <p class="module-state" id="export-state" role="status" aria-live="polite"></p>
                 <div class="health-score-container">
                     <div class="health-score-ring" id="health-score-ring">
-                        <svg viewBox="0 0 120 120">
+                        <svg viewBox="0 0 120 120" aria-hidden="true">
                             <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
                             <circle class="ring-fill" cx="60" cy="60" r="52" id="health-ring"></circle>
                         </svg>
@@ -156,7 +187,7 @@
                 <div class="parent-summary" id="parent-summary">加载中...</div>
                 <div class="parent-sections">
                     <div class="parent-section">
-                        <h3>✨ 本周亮点</h3>
+                        <h3>✨ 期间亮点</h3>
                         <ul id="parent-highlights"><li>加载中...</li></ul>
                     </div>
                     <div class="parent-section">
@@ -168,18 +199,52 @@
                         <ul id="parent-suggestions"><li>加载中...</li></ul>
                     </div>
                 </div>
-                <div class="risk-alert" id="risk-alert" style="display:none">
-                    <span class="risk-icon">🚨</span>
-                    <span class="risk-text" id="risk-text"></span>
+            </div>
+        </section>
+        <section class="panel panel-full" id="panel-history" data-channel="history" aria-labelledby="history-heading">
+            <div class="panel-header"><h2 id="history-heading">情绪历史</h2><button type="button" id="history-refresh">刷新历史与趋势</button></div>
+            <div class="panel-body">
+                <p class="module-state" id="history-state">等待历史数据</p>
+                <p id="history-summary" role="status" aria-live="polite">暂无记录</p>
+                <p id="history-timezone" class="module-state">时间采用本机时区。</p>
+                <div class="table-scroll" tabindex="0" role="region" aria-label="情绪记录表格，可左右滚动">
+                    <table aria-describedby="history-timezone"><caption>情绪记录明细（范围由上方 1天 / 7天 / 30天按钮选择）</caption>
+                        <thead><tr><th scope="col">时间</th><th scope="col">情绪</th><th scope="col">效价</th><th scope="col">唤醒度</th><th scope="col">情绪原因</th></tr></thead>
+                        <tbody id="history-rows"><tr><td colspan="5">暂无记录</td></tr></tbody>
+                    </table>
                 </div>
+                <div class="panel-controls"><button type="button" id="history-prev" disabled>上一页</button><button type="button" id="history-next" disabled>下一页</button></div>
+            </div>
+        </section>
+        <section class="panel panel-full" id="panel-system" data-channel="system" aria-labelledby="system-heading">
+            <div class="panel-header"><h2 id="system-heading">设备与系统状态</h2><button type="button" id="system-refresh">重新检查</button></div>
+            <div class="panel-body">
+                <p class="module-state" id="system-state">等待系统检查</p><p id="system-summary">状态未知</p>
+                <div class="table-scroll" tabindex="0" role="region" aria-label="组件状态表格，可左右滚动"><table><caption>组件状态和检查原因</caption>
+                    <thead><tr><th scope="col">组件</th><th scope="col">状态</th><th scope="col">原因</th><th scope="col">检查时间</th></tr></thead>
+                    <tbody id="device-rows"><tr><td colspan="4">尚未检查</td></tr></tbody>
+                </table></div>
+            </div>
+        </section>
+        <section class="panel panel-full" id="panel-settings" data-channel="settings" aria-labelledby="settings-heading">
+            <div class="panel-header"><h2 id="settings-heading">设置与隐私</h2><button type="button" id="settings-refresh">刷新设置</button></div>
+            <div class="panel-body">
+                <p class="module-state" id="settings-state">等待配置信息</p>
+                <dl class="settings-grid">
+                    <div><dt>数据模式</dt><dd id="setting-mode">--</dd></div><div><dt>产品范围</dt><dd id="setting-scope">--</dd></div>
+                    <div><dt>API 地址</dt><dd id="setting-api">--</dd></div><div><dt>运行环境</dt><dd id="setting-env">--</dd></div>
+                    <div><dt>数据存储</dt><dd id="setting-storage">--</dd></div><div><dt>保留周期</dt><dd id="setting-retention">--</dd></div>
+                    <div><dt>原始文本</dt><dd id="setting-raw">--</dd></div>
+                </dl>
+                <h3>隐私说明</h3><p id="privacy-notice">等待真实配置说明</p>
             </div>
         </section>
     </main>
 
     <!-- Footer -->
     <footer class="dashboard-footer">
-        <span>SoulCompanion AI v1.1.0 | ASD儿童智能陪伴干预机器人</span>
-        <span id="footer-mode">实时刷新中 | <a href="/docs" target="_blank" id="api-doc-link">API文档</a></span>
+        <span>SoulCompanion AI v2.0.0 | ASD儿童情绪陪伴辅助软件</span>
+        <span id="footer-mode">本机单儿童产品</span><a href="/docs" target="_blank" rel="noopener" id="api-doc-link">API文档</a>
     </footer>
 
     <!-- demo-data.js 必须在 app.js 之前加载：app.js 依赖 window.SoulCompanionDemo -->

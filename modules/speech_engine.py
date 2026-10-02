@@ -1,181 +1,198 @@
-# modules/speech_engine.py
+"""Offline speech adapter with bounded audio buffering and visible health."""
+from __future__ import annotations
+
+import logging
 import json
-import time
+import os
 import queue
 import threading
-import sys
-import os
-import numpy as np
-import pyaudio
+import time
 from collections import deque
-from vosk import Model, KaldiRecognizer
-from transformers import pipeline
+from datetime import datetime
 
-# Fix Windows console encoding for emoji support
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+from config import SER_PATH, VOSK_PATH
+
+logger = logging.getLogger("SpeechEngine")
 
 
 class SpeechEngine:
-    def __init__(self, vosk_path="model", ser_model_path="models/ser_model"):
-        self.is_running = True
+    def __init__(self, vosk_path=None, ser_model_path=None, *, audio_backend=None, model_factory=None, recognizer_factory=None, ser_factory=None):
+        self.is_running = False
         self.current_state = {"text": "", "emotion": "neutral", "seq": 0}
-        self._lock = threading.Lock()
-        # 单调递增的语句序号：用于让多个消费者（主循环 / 情绪桥接器）
-        # 各自判断"这条语音我处理过没有"，避免破坏性读取互相抢事件。
-        self._seq = 0
-
-        # 1. 初始化 VOSK (内容识别)
-        print(f"🎙️ [听觉引擎] 正在加载 VOSK 模型: {vosk_path}...")
+        self._lock = threading.RLock()
+        self._buffer_lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._seq = self._consumed_seq = 0
+        self._last_warning = 0.0
+        self._components = {}
+        self.audio_queue = queue.Queue(maxsize=16)
+        self.audio_buffer = deque(maxlen=12)
+        self.dropped_chunks = 0
+        self.process_thread = None
+        self.stream = self.p = None
+        for name in ("microphone", "speech_model", "ser_model"):
+            self._status(name, "unknown", "Not initialized")
         try:
-            self.vosk_model = Model(vosk_path)
-            self.recognizer = KaldiRecognizer(self.vosk_model, 16000)
-        except Exception as e:
-            print(f"❌ [听觉引擎] VOSK 初始化失败: {e}")
-            self.is_running = False
+            import numpy as np
+            self.np = np
+            if audio_backend is None:
+                import pyaudio
+                audio_backend = pyaudio
+            self.audio_backend = audio_backend
+            if model_factory is None or recognizer_factory is None:
+                from vosk import Model, KaldiRecognizer
+                model_factory = model_factory or Model
+                recognizer_factory = recognizer_factory or KaldiRecognizer
+            if ser_factory is None:
+                from transformers import AutoFeatureExtractor, AutoModelForAudioClassification, pipeline
+
+                def ser_factory(task, *, model, device):
+                    classifier = AutoModelForAudioClassification.from_pretrained(model, local_files_only=True)
+                    extractor = AutoFeatureExtractor.from_pretrained(model, local_files_only=True)
+                    return pipeline(task, model=classifier, feature_extractor=extractor, device=device)
+        except ImportError as exc:
+            for name in self._components:
+                self._status(name, "unavailable", "Speech runtime dependency unavailable")
+            self._warning("speech_dependency_failed", exc)
             return
-
-        # 2. 初始化 Transformer 语音情感识别 (纯离线加载)
-        print(f"🧠 [听觉引擎] 正在加载 Wav2Vec2 情感模型: {ser_model_path}...")
         try:
-            # device=-1 表示使用 CPU，如果装了 CUDA 版本可以改成 device=0
-            self.ser_classifier = pipeline(
-                "audio-classification",
-                model=ser_model_path,
-                device=-1
-            )
-            print("✅ [听觉引擎] 深度学习情感模型加载完毕！")
-        except Exception as e:
-            print(f"❌ [听觉引擎] 情感模型加载失败: {e}")
-            self.is_running = False
+            path = vosk_path or VOSK_PATH
+            if not os.path.isdir(path):
+                raise FileNotFoundError("Vosk model missing")
+            self.vosk_model = model_factory(path)
+            self.recognizer = recognizer_factory(self.vosk_model, 16000)
+            self._status("speech_model", "healthy", "Vosk model loaded")
+        except Exception as exc:
+            self._status("speech_model", "unavailable", "Vosk model missing or invalid")
+            self._status("microphone", "disabled", "ASR is unavailable")
+            self._warning("vosk_load_failed", exc)
             return
-
-        # 3. 初始化音频流和环形缓冲区
-        self.audio_queue = queue.Queue()
-        # 16000 采样率，保存最近 3 秒的数据 (16000 * 3 * 2 bytes = 96000 bytes)
-        self.audio_buffer = deque(maxlen=16000 * 3 * 2)
-
-        self.p = pyaudio.PyAudio()
         try:
-            self.stream = self.p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
-                input=True,
-                frames_per_buffer=4000,
-                stream_callback=self._audio_callback
-            )
+            path = ser_model_path or SER_PATH
+            if not os.path.isdir(path):
+                raise FileNotFoundError("SER model missing")
+            self.ser_classifier = ser_factory("audio-classification", model=path, device=-1)
+            self._status("ser_model", "healthy", "Offline SER model loaded")
+        except Exception as exc:
+            self.ser_classifier = None
+            self._status("ser_model", "unavailable", "SER model missing or invalid; ASR remains available")
+            self._warning("ser_load_failed", exc)
+        try:
+            self.p = self.audio_backend.PyAudio()
+            self.stream = self.p.open(format=self.audio_backend.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=4000, stream_callback=self._audio_callback)
             self.stream.start_stream()
-        except Exception as e:
-            print(f"❌ [听觉引擎] 麦克风启动失败: {e}")
-            self.is_running = False
-
-        # 4. 启动后台处理线程
-        if self.is_running:
-            self.process_thread = threading.Thread(target=self._process_audio, daemon=True)
+            self.is_running = True
+            self._status("microphone", "degraded", "Microphone opened; awaiting audio")
+            self.process_thread = threading.Thread(target=self._process_audio, daemon=True, name="SpeechEngine")
             self.process_thread.start()
-            print("👂 [听觉引擎] 实时多模态听觉（内容+语气）已启动。")
+        except Exception as exc:
+            self._status("microphone", "unavailable", "Microphone could not be opened")
+            self._warning("microphone_open_failed", exc)
+            self.stop()
+
+    def _status(self, component, status, reason):
+        with self._lock:
+            self._components[component] = {"status": status, "reason": reason, "checked_at": datetime.now().isoformat()}
+
+    def _warning(self, code, exc):
+        now = time.monotonic()
+        if now - self._last_warning >= 5:
+            logger.warning("%s type=%s", code, type(exc).__name__)
+            self._last_warning = now
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
-        """麦克风录音回调，将数据压入队列和环形缓冲区"""
-        self.audio_queue.put(in_data)
-        # 实时覆盖旧数据，始终保留最近3秒
-        for byte in in_data:
-            self.audio_buffer.append(byte)
-        return (None, pyaudio.paContinue)
+        if self._stop_event.is_set():
+            return None, self.audio_backend.paComplete
+        captured_at = time.time()
+        chunk = bytes(in_data)
+        try:
+            self.audio_queue.put_nowait((chunk, captured_at))
+        except queue.Full:
+            self.dropped_chunks += 1
+        with self._buffer_lock:
+            self.audio_buffer.append(chunk)
+        self._status("microphone", "degraded" if status or self.dropped_chunks else "healthy", "Audio chunks dropped or device overflow" if status or self.dropped_chunks else "Microphone is producing audio")
+        return None, self.audio_backend.paContinue
 
     def _process_audio(self):
-        """后台解析线程"""
-        while self.is_running:
-            try:
-                data = self.audio_queue.get(timeout=0.1)
-
-                # VOSK 判断是否说完了一句话
-                if self.recognizer.AcceptWaveform(data):
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    data, captured_at = self.audio_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                try:
+                    if time.time() - captured_at > 4.0:
+                        self.dropped_chunks += 1
+                        continue
+                    if not self.recognizer.AcceptWaveform(data):
+                        continue
                     result = json.loads(self.recognizer.Result())
-                    text = result.get('text', '')
-
-                    if text:
-                        print(f"\n🗣️ [VOSK] 识别到文字: '{text}'")
-                        print("⏳ 正在调用 Transformer 分析语气...")
-
-                        # --- 核心：提取最近3秒的声音送给深度学习模型 ---
-                        audio_bytes = bytes(self.audio_buffer)
-                        # 将 Int16 的字节流转为 Float32 的 Numpy 数组 (深度学习模型的标准输入)
-                        audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-
-                        # 执行推理
-                        ser_result = self.ser_classifier({"raw": audio_np, "sampling_rate": 16000})
-
-                        # 获取得分最高的情绪标签
-                        raw_emotion = ser_result[0]['label']
-
-                        # 将英文缩写映射到你机器人的标准情绪逻辑
-                        emotion_mapping = {
-                            "neu": "neutral",
-                            "hap": "happy",
-                            "ang": "anxious",  # 愤怒映射为焦虑/激动
-                            "sad": "sad"
-                        }
-                        final_emotion = emotion_mapping.get(raw_emotion, "neutral")
-
-                        print(f"📊 [Wav2Vec2] 语气分析结果: {final_emotion} (置信度: {ser_result[0]['score']:.2f})")
-
-                        # 更新状态，供主程序读取
-                        with self._lock:
-                            self._seq += 1
-                            self.current_state = {
-                                "text": text,
-                                "emotion": final_emotion,
-                                "seq": self._seq,
-                            }
-
-            except queue.Empty:
-                continue
-            except Exception as e:
-                print(f"⚠️ 音频处理异常: {e}")
+                    text = result.get("text", "")
+                    if not isinstance(text, str) or not text:
+                        continue
+                    emotion = ""
+                    if self.ser_classifier is not None:
+                        try:
+                            with self._buffer_lock:
+                                audio_bytes = b"".join(self.audio_buffer)
+                            audio_np = self.np.frombuffer(audio_bytes, dtype=self.np.int16).astype(self.np.float32) / 32768.0
+                            ser_result = self.ser_classifier({"raw": audio_np, "sampling_rate": 16000})
+                            emotion = {"neu": "neutral", "hap": "happy", "ang": "anxious", "sad": "sad"}.get(ser_result[0]["label"], "neutral")
+                            self._status("ser_model", "healthy", "SER inference succeeded")
+                        except Exception as exc:
+                            self._status("ser_model", "degraded", "SER inference failed; transcript is available")
+                            self._warning("ser_inference_failed", exc)
+                    if self._stop_event.is_set():
+                        continue
+                    with self._lock:
+                        self._seq += 1
+                        self.current_state = {"text": text, "emotion": emotion, "seq": self._seq, "captured_at": captured_at}
+                    self._status("speech_model", "healthy", "ASR recognition succeeded")
+                except Exception as exc:
+                    self._status("speech_model", "degraded", "ASR processing failed")
+                    self._warning("audio_processing_failed", exc)
+                finally:
+                    self.audio_queue.task_done()
+        finally:
+            self.is_running = False
 
     def get_latest_text(self):
-        """[破坏性] 返回识别结果，并清空当前状态以防重复读取。
-
-        适用于"唯一消费者"场景（如 main.py 主循环）。
-        若有多个消费者，请改用 peek_latest_text()，否则先读的一方会把事件吃掉。
-        """
+        """Consume one event for the robot, while retaining it for bridge readers."""
         with self._lock:
-            if self.current_state["text"]:
-                result = self.current_state.copy()
-                self.current_state["text"] = ""  # 读取后清空
-                return result
+            if self.current_state["text"] and self.current_state["seq"] != self._consumed_seq:
+                self._consumed_seq = self.current_state["seq"]
+                return self.current_state.copy()
         return None
 
     def peek_latest_text(self):
-        """[非破坏性] 返回最近一次识别结果，但不清空状态。
-
-        返回 None 表示尚未有过识别结果。返回值中的 ``seq`` 字段单调递增，
-        调用方可用它判断"这条语音是否已经处理过"，从而与主循环共享同一事件
-        而不互相抢占。
-
-        用法::
-
-            state = speech.peek_latest_text()
-            if state and state["seq"] != self._last_seq:
-                self._last_seq = state["seq"]
-                ...
-        """
         with self._lock:
-            state = self.current_state.copy()
-        if not state.get("text"):
-            return None
-        return state
+            return self.current_state.copy() if self.current_state.get("text") else None
+
+    def get_status(self):
+        with self._lock:
+            result = {key: value.copy() for key, value in self._components.items()}
+        return {"components": result, "running": bool(self.process_thread and self.process_thread.is_alive() and self.is_running), "queue_size": self.audio_queue.qsize(), "dropped_chunks": self.dropped_chunks}
 
     def stop(self):
+        self._stop_event.set()
         self.is_running = False
-        if hasattr(self, 'stream'):
-            self.stream.stop_stream()
-            self.stream.close()
-        if hasattr(self, 'p'):
-            self.p.terminate()
+        stream, self.stream = self.stream, None
+        if stream is not None:
+            for name in ("stop_stream", "close"):
+                try:
+                    getattr(stream, name)()
+                except Exception as exc:
+                    self._warning("audio_" + name + "_failed", exc)
+        if self.process_thread and self.process_thread is not threading.current_thread():
+            self.process_thread.join(timeout=2.0)
+        audio, self.p = self.p, None
+        if audio is not None:
+            try:
+                audio.terminate()
+            except Exception as exc:
+                self._warning("audio_terminate_failed", exc)
+        if self.process_thread and self.process_thread.is_alive():
+            self._status("microphone", "unavailable", "Audio worker did not stop within timeout")
+        elif self._components["microphone"]["status"] != "unavailable":
+            self._status("microphone", "disabled", "Microphone stopped")

@@ -39,15 +39,17 @@ Usage:
 from __future__ import annotations
 
 import logging
+import copy
+import math
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
 from emotion.behavior_sync import BehaviorSync
 from emotion.embodied_engine import EmbodiedEngine
-from emotion.fusion_engine import FusionEngine
+from emotion.fusion_engine import FusionEngine, SPEECH_EMOTION_MAP, VISION_EMOTION_MAP
 from emotion.intervention import InterventionEngine, InterventionPlan
 from emotion.memory_axis import MemoryAxis
 from emotion.models import (
@@ -86,6 +88,11 @@ class EmotionSnapshot:
     is_running: bool = False
     cycle_count: int = 0
     last_update: str = ""
+    data_available: bool = False
+    risk_checked_at: str = ""
+    last_error: str = ""
+    last_error_at: str = ""
+    error_count: int = 0
 
     # Attention
     # R12：默认 0.5（注意力"未知"），与 fusion_engine 的约定一致。
@@ -143,9 +150,16 @@ class EmotionBridge:
         # ── 状态 ──
         self._snapshot = EmotionSnapshot()
         self._lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
+        self._stop_event = threading.Event()
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._cycle_count = 0
+        self._last_risk_triggers: List[str] = []
+        self._risk_checked_at = ""
+        self._last_error = self._last_error_at = ""
+        self._error_count = 0
+        self._last_warning = 0.0
 
         # ── 记忆写入策略（抑制写放大）──
         # 0.5s 一轮 = 每天约 17 万行，几天就能把 SQLite 撑爆。
@@ -186,31 +200,35 @@ class EmotionBridge:
 
     def start(self) -> None:
         """Start the emotion bridge background thread."""
-        if self._running:
-            logger.warning("⚠️ [桥接器] 已在运行中")
-            return
-
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._run_loop,
-            daemon=True,
-            name="EmotionBridge",
-        )
-        self._thread.start()
+        with self._lifecycle_lock:
+            if self._thread and self._thread.is_alive():
+                return
+            if self._stop_event.is_set():
+                raise RuntimeError("Stopped bridges cannot be restarted; create a new bridge")
+            self._running = True
+            self._thread = threading.Thread(target=self._run_loop, daemon=True, name="EmotionBridge")
+            self._thread.start()
         logger.info("🚀 [桥接器] 后台情绪处理循环已启动")
 
     def stop(self) -> None:
         """Stop the emotion bridge."""
-        self._running = False
+        with self._lifecycle_lock:
+            self._running = False
+            self._stop_event.set()
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=5.0)
+            if self._thread is not threading.current_thread():
+                self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                self._mark_error("bridge_shutdown_timeout")
         self._embodied.stop()
+        with self._lock:
+            self._snapshot = replace(self._snapshot, is_running=False, data_available=False, last_error=self._last_error)
         logger.info("⚙️ [桥接器] 已停止")
 
     def get_snapshot(self) -> EmotionSnapshot:
         """Get the current emotion system snapshot (thread-safe)."""
         with self._lock:
-            return self._snapshot
+            return copy.deepcopy(self._snapshot)
 
     def get_memory(self) -> MemoryAxis:
         """Get the memory axis instance (for web API queries)."""
@@ -235,7 +253,7 @@ class EmotionBridge:
     @property
     def is_running(self) -> bool:
         """Whether the bridge is currently running."""
-        return self._running
+        return bool(self._running and self._thread and self._thread.is_alive())
 
     # ─── Main Loop ───────────────────────────────────────────────────
 
@@ -243,22 +261,59 @@ class EmotionBridge:
         """Background processing loop."""
         logger.info("🔄 [桥接器] 情绪处理循环开始")
 
-        while self._running:
-            try:
-                self._process_cycle()
-            except Exception as e:
-                logger.error(f"❌ [桥接器] 处理周期异常: {e}", exc_info=True)
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    self._process_cycle()
+                except Exception as exc:
+                    self._mark_error("bridge_cycle_failed", exc)
+                    self._publish_unavailable()
+                self._stop_event.wait(self._cycle_interval)
+        finally:
+            self._running = False
+            with self._lock:
+                self._snapshot = replace(self._snapshot, is_running=False, data_available=False)
 
-            time.sleep(self._cycle_interval)
+    def _mark_error(self, code, exc=None):
+        self._last_error = code
+        self._last_error_at = datetime.now().isoformat()
+        self._error_count += 1
+        now = time.monotonic()
+        if now - self._last_warning >= 5.0:
+            logger.warning("%s type=%s", code, type(exc).__name__ if exc else "runtime")
+            self._last_warning = now
 
-        logger.info("🔄 [桥接器] 情绪处理循环结束")
+    def _publish_unavailable(self):
+        with self._lock:
+            self._snapshot = EmotionSnapshot(
+                emotion=EmotionState(attention_level=0.5), is_running=self.is_running,
+                cycle_count=self._cycle_count, last_update=datetime.now().isoformat(),
+                risk_triggers=list(self._last_risk_triggers), has_risk=bool(self._last_risk_triggers),
+                risk_checked_at=self._risk_checked_at, last_error=self._last_error,
+                last_error_at=self._last_error_at, error_count=self._error_count,
+            )
+
+    @staticmethod
+    def _fresh_capture(state, maximum_age):
+        captured = state.get("captured_at")
+        if captured is None:
+            return True  # Compatibility for injected legacy/Fake adapters.
+        try:
+            if isinstance(captured, str):
+                captured = datetime.fromisoformat(captured).timestamp()
+            return -1.0 <= time.time() - float(captured) <= maximum_age
+        except (ValueError, TypeError, OverflowError):
+            return False
 
     def _read_vision(self) -> Dict:
         """安全读取视觉状态；getter 抛异常时返回空 dict 而不是中断整个周期。"""
         try:
-            return self._get_vision() or {}
+            state = self._get_vision() or {}
+            if state.get("observation_available") is False or not self._fresh_capture(state, 2.0):
+                return {}
+            return state
         except Exception as e:
-            logger.debug(f"读取视觉状态失败: {e}")
+            self._mark_error("vision_read_failed", e)
             return {}
 
     def _read_speech(self) -> Optional[Dict]:
@@ -272,10 +327,13 @@ class EmotionBridge:
         try:
             speech_state = self._get_speech()
         except Exception as e:
-            logger.debug(f"读取语音状态失败: {e}")
+            self._mark_error("speech_read_failed", e)
             return None
 
         if not speech_state:
+            return None
+
+        if not self._fresh_capture(speech_state, self._speech_freshness):
             return None
 
         seq = speech_state.get("seq")
@@ -318,6 +376,7 @@ class EmotionBridge:
     def _process_cycle(self) -> None:
         """Single processing cycle: read → fuse → act → record."""
         self._cycle_count += 1
+        self._last_error = ""
 
         # ── 1. Read sensor state ──
         vision_state = self._read_vision()
@@ -326,6 +385,23 @@ class EmotionBridge:
         # Merge environment signals with dynamic data
         env = dict(self._env_signals)
         env["hour"] = datetime.now().hour
+
+        # A time-of-day prior is not a child observation. Empty/expired sensors
+        # publish unavailable state and never manufacture real history or actions.
+        vision_signal = bool(
+            vision_state.get("face_detected") is not False
+            and vision_state.get("emotion") in VISION_EMOTION_MAP
+        )
+        speech_signal = bool(speech_state and speech_state.get("emotion") in SPEECH_EMOTION_MAP)
+        environment_signal = any(
+            isinstance(env.get(key), (int, float)) and not isinstance(env.get(key), bool)
+            and math.isfinite(env[key]) and 0.0 <= env[key] <= 1.0
+            for key in ("bio_anxiety", "noise_level")
+        )
+        observed = vision_signal or speech_signal or environment_signal
+        if not observed:
+            self._publish_unavailable()
+            return
 
         # ── 2. Fuse emotions ──
         emotion_state = self._fusion.fuse(
@@ -336,35 +412,48 @@ class EmotionBridge:
 
         # ── 3. Record to memory (带去重/限频，避免写放大) ──
         context = speech_state.get("text", "") if speech_state else ""
+        previous_signature = self._last_record_signature
+        previous_record_time = self._last_record_time
         if self._should_record(emotion_state):
-            self._memory.record(emotion_state, context=context, source_text=context)
+            try:
+                self._memory.record(emotion_state, context=context, source_text=context)
+            except Exception as exc:
+                # 去重标记只有在成功持久化后才能生效；失败周期下次仍应重试。
+                self._last_record_signature = previous_signature
+                self._last_record_time = previous_record_time
+                self._mark_error("memory_write_failed", exc)
 
         # ── 4. Generate behavior command ──
         behavior_cmd = self._behavior.sync(emotion_state)
 
         # ── 5. Execute behavior ──
-        self._embodied.execute(behavior_cmd)
+        if not self._stop_event.is_set():
+            self._embodied.execute(behavior_cmd)
 
         # ── 6. Evaluate intervention ──
         intervention = self._intervention.evaluate(emotion_state)
 
         # ── 7. Check risk triggers (every 10 cycles to avoid DB spam) ──
-        risk_triggers: List[str] = []
         if self._cycle_count % 10 == 0:
-            risk_triggers = self._memory.check_risk_triggers(window_minutes=30)
+            try:
+                self._last_risk_triggers = self._memory.check_risk_triggers(window_minutes=30)
+                self._risk_checked_at = datetime.now().isoformat()
+            except Exception as exc:
+                self._mark_error("risk_check_failed", exc)
+        risk_triggers = list(self._last_risk_triggers)
 
         # ── 8. Fire callbacks ──
-        if intervention.intervention_type != InterventionType.NONE and self._on_intervention:
+        if not self._stop_event.is_set() and intervention.intervention_type != InterventionType.NONE and self._on_intervention:
             try:
                 self._on_intervention(intervention)
             except Exception as e:
-                logger.error(f"❌ [桥接器] 干预回调异常: {e}")
+                self._mark_error("intervention_callback_failed", e)
 
-        if self._on_behavior:
+        if not self._stop_event.is_set() and self._on_behavior:
             try:
                 self._on_behavior(behavior_cmd)
             except Exception as e:
-                logger.error(f"❌ [桥接器] 行为回调异常: {e}")
+                self._mark_error("behavior_callback_failed", e)
 
         # ── 9. Update snapshot ──
         snapshot = EmotionSnapshot(
@@ -378,10 +467,14 @@ class EmotionBridge:
             parent_alert=intervention.parent_alert,
             risk_triggers=risk_triggers,
             has_risk=len(risk_triggers) > 0,
-            is_running=self._running,
+            is_running=self.is_running,
             cycle_count=self._cycle_count,
             last_update=datetime.now().isoformat(),
             attention_level=emotion_state.attention_level,
+            data_available=not self._stop_event.is_set(),
+            risk_checked_at=self._risk_checked_at,
+            last_error=self._last_error, last_error_at=self._last_error_at,
+            error_count=self._error_count,
         )
 
         with self._lock:

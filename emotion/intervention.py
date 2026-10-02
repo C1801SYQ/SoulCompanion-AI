@@ -310,7 +310,7 @@ class InterventionEngine:
         self, memory_axis: Optional[MemoryAxis] = None, days: int = 7
     ) -> ParentReport:
         """
-        Generate a weekly parent report.
+        Generate a parent report for the selected time window.
         Non-intrusive: summary format, not alarmist.
 
         Args:
@@ -327,13 +327,14 @@ class InterventionEngine:
                 period_start=datetime.now().strftime("%Y-%m-%d"),
                 period_end=datetime.now().strftime("%Y-%m-%d"),
                 summary="暂无足够数据生成报告",
+                health_score=None,
             )
 
         now = datetime.now()
         start = now - timedelta(days=days)
 
         # Get trend analysis
-        trend = axis.get_trend_analysis(period="weekly")
+        trend = axis.get_trend_analysis(period="weekly", days=days)
 
         # Get emotion counts
         emotion_counts = axis.get_emotion_counts(days=days)
@@ -346,6 +347,15 @@ class InterventionEngine:
 
         # ── Build summary ──
         total = sum(emotion_counts.values())
+        if total == 0:
+            return ParentReport(
+                period_start=start.strftime("%Y-%m-%d"),
+                period_end=now.strftime("%Y-%m-%d"),
+                summary="所选时段暂无情绪记录，无法评估情绪状态。",
+                emotion_trend=trend,
+                suggestions=["获得有效感知数据后再生成报告。"],
+                health_score=None,
+            )
         positive = emotion_counts.get("happy", 0) + emotion_counts.get("calm", 0)
         negative = (
             emotion_counts.get("sad", 0)
@@ -353,14 +363,12 @@ class InterventionEngine:
             + emotion_counts.get("distressed", 0)
         )
 
-        if total == 0:
-            summary = "本周互动记录较少，建议增加与小予的互动时间。"
-        elif positive > negative * 2:
-            summary = "本周整体情绪状态良好，孩子表现出较多积极情绪。"
+        if positive > negative * 2:
+            summary = "所选时段整体情绪状态良好，孩子表现出较多积极情绪。"
         elif negative > positive:
-            summary = "本周情绪波动较多，建议关注孩子的情绪变化。"
+            summary = "所选时段情绪波动较多，建议关注孩子的情绪变化。"
         else:
-            summary = "本周情绪状态平稳，有正常的起伏变化。"
+            summary = "所选时段情绪状态平稳，有正常的起伏变化。"
 
         # ── Build highlights ──
         highlights: List[str] = []
@@ -415,29 +423,34 @@ class InterventionEngine:
     def generate_parent_report_markdown(self, days: int = 7) -> str:
         """Generate parent report as Markdown string."""
         report = self.generate_parent_report(days=days)
+        window_label = "本周" if days == 7 else "所选时段"
+        health_score = (
+            f"{report.health_score} / 100"
+            if report.health_score is not None else "暂无数据，无法评估"
+        )
 
-        md = f"""# 🌟 小予机器人 - 每周情感陪伴报告
+        md = f"""# 🌟 小予机器人 - 情感陪伴报告
 
 **报告周期：** {report.period_start} ~ {report.period_end}
 
 ---
 
-## 📊 本周总览
+## 📊 {window_label}总览
 
 - **互动次数：** {report.interaction_count} 次
-- **情绪健康指数：** {report.health_score} / 100
+- **情绪健康指数：** {health_score}
 - **整体评价：** {report.summary}
 
 ---
 
-## ✨ 本周亮点
+## ✨ {window_label}亮点
 
 """
         if report.highlights:
             for h in report.highlights:
                 md += f"- {h}\n"
         else:
-            md += "- 本周暂无特别亮点\n"
+            md += "- 所选时段暂无特别亮点\n"
 
         md += "\n---\n\n## ⚠️ 需要关注\n\n"
 
@@ -445,7 +458,10 @@ class InterventionEngine:
             for c in report.concerns:
                 md += f"- {c}\n"
         else:
-            md += "- 本周无需特别关注\n"
+            md += (
+                "- 暂无数据，无法评估\n" if report.interaction_count == 0
+                else "- 所选时段未发现需要特别关注的记录\n"
+            )
 
         md += "\n---\n\n## 💡 建议\n\n"
 

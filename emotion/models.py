@@ -153,4 +153,4 @@ class ParentReport:
     concerns: List[str] = field(default_factory=list)
     suggestions: List[str] = field(default_factory=list)
     interaction_count: int = 0
-    health_score: float = 50.0        # 0-100
+    health_score: Optional[float] = None  # 0-100; None when no data is available

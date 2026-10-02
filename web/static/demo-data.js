@@ -837,7 +837,10 @@
         var windows = {
             hourly: 60 * 60 * 1000,
             daily: 24 * 60 * 60 * 1000,
-            weekly: 7 * 24 * 60 * 60 * 1000
+            weekly: 7 * 24 * 60 * 60 * 1000,
+            '1d': 24 * 60 * 60 * 1000,
+            '7d': 7 * 24 * 60 * 60 * 1000,
+            '30d': 30 * 24 * 60 * 60 * 1000
         };
         var win = has(windows, period) ? windows[period] : windows.daily;
         ensureInit();
@@ -912,7 +915,7 @@
     function getParentReport(days) {
         var recs = recordsSince(days);
         var counts = countByCategory(recs);
-        var trend = getEmotionTrends('weekly');
+        var trend = getEmotionTrends(days + 'd');
 
         var total = recs.length;
         var positive = (counts.happy || 0) + (counts.calm || 0);
@@ -1038,6 +1041,78 @@
         };
     }
 
+    // Product contracts share the existing synthetic engine. No real sensor,
+    // storage or backend is contacted by these adapters.
+    function getProductSnapshot() {
+        var emotion = getEmotionCurrent();
+        var command = getBehaviorCommand();
+        var risk = getRiskTriggers(60);
+        var intervention = getLastIntervention();
+        return {
+            timestamp: localIso(Date.now()), mode: 'demo', data_available: true,
+            emotion: emotion, behavior: command,
+            intervention: {
+                intervention_type: intervention.intervention_type,
+                guidance_text: intervention.guidance_text,
+                guidance_style: intervention.guidance_style,
+                parent_alert: intervention.parent_alert
+            },
+            risk: { status: 'known', has_risk: risk.has_risk, triggers: risk.triggers, checked_at: emotion.timestamp },
+            bridge: { connected: false, running: false, cycle_count: sim.cycleCount, last_update: emotion.timestamp },
+            system: { status: 'degraded', checked_at: emotion.timestamp }
+        };
+    }
+
+    function getProductHistory(days, limit, offset) {
+        var records = recordsSince(days).slice().reverse();
+        return {
+            mode: 'demo', days: days, limit: limit, offset: offset, total: records.length,
+            has_more: offset + limit < records.length,
+            records: records.slice(offset, offset + limit).map(function (record) {
+                return { timestamp: record.timestamp, category: record.category, valence: record.valence,
+                    arousal: record.arousal, cause: record.cause };
+            })
+        };
+    }
+
+    function getProductAnalytics(days) {
+        var records = recordsSince(days);
+        return {
+            mode: 'demo', days: days, trend: getEmotionTrends(days + 'd'),
+            counts: countByCategory(records), series: getValenceSeries(days).series.slice(-500),
+            patterns: {}, total_records: records.length
+        };
+    }
+
+    function getProductReport(days) {
+        var report = getParentReport(days);
+        report.mode = 'demo';
+        report.data_available = report.interaction_count > 0;
+        report.emotion_trend = getEmotionTrends(days + 'd');
+        report.summary = report.summary.replace(/本周/g, '所选期间');
+        if (!report.data_available) report.health_score = null;
+        return report;
+    }
+
+    function getProductSystem() {
+        var checkedAt = localIso(Date.now());
+        var components = {};
+        ['backend', 'database', 'bridge', 'camera', 'microphone', 'vision_model',
+            'speech_model', 'ser_model', 'ollama', 'hardware'].forEach(function (name) {
+            components[name] = { status: 'disabled', reason: 'DEMO DATA：合成演示不连接真实组件', checked_at: checkedAt };
+        });
+        return { mode: 'demo', status: 'degraded', timestamp: checkedAt, components: components,
+            reasons: ['DEMO DATA：所有设备和存储检查已停用'] };
+    }
+
+    function getProductSettings() {
+        return {
+            mode: 'demo', local_only: true, single_profile: true, api_base: '/api/v1', app_env: 'demo',
+            privacy_notice: 'DEMO DATA：当前视图在浏览器内合成，不读取真实儿童数据。浏览器切换模式不控制后台感知和记录。',
+            storage: { status: 'disabled', retention_days: 0, raw_text_saved: false }
+        };
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // 对外接口
     // ─────────────────────────────────────────────────────────────────
@@ -1055,6 +1130,18 @@
         var p = parsed.params;
 
         switch (path) {
+            case '/api/v1/dashboard/snapshot':
+                return getProductSnapshot();
+            case '/api/v1/emotions/history':
+                return getProductHistory(intParam(p.days, 7), intParam(p.limit, 20), intParam(p.offset, 0));
+            case '/api/v1/emotions/analytics':
+                return getProductAnalytics(intParam(p.days, 7));
+            case '/api/v1/reports/parent':
+                return getProductReport(intParam(p.days, 7));
+            case '/api/v1/system/status':
+                return getProductSystem();
+            case '/api/v1/system/settings':
+                return getProductSettings();
             case '/api/emotion/current':
                 return getEmotionCurrent();
             case '/api/behavior/command':

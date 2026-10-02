@@ -1,0 +1,8 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = [".test-artifacts", ".venv", ".venv-test", "data", "model", "models", "dist-site", "Cachenpm"]
+
+[tool.ruff.lint]
+# Catch syntax, undefined names and invalid control flow without rewriting domain style.
+select = ["E9", "F63", "F7", "F82"]

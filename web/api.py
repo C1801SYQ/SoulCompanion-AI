@@ -25,46 +25,59 @@ import sys
 import os
 from datetime import datetime
 from typing import Optional
+from functools import wraps
+from threading import RLock
+from typing import Literal
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-from config import CORS_ORIGINS, DASHBOARD_HOST, DASHBOARD_PORT
+from config import CORS_ORIGINS, DASHBOARD_HOST, DASHBOARD_PORT, DEMO_MODE
+from web.contracts import Liveness, SystemStatus
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "2.0.0"
+
+
+def _legacy_mode_boundary(request: Request):
+    if DEMO_MODE and request.url.path.startswith("/api/") and not request.url.path.startswith("/api/v1/"):
+        from web.service import ProductError
+        raise ProductError("DEMO_MODE", "Legacy real-data APIs are disabled in explicit demo mode", 409)
 
 app = FastAPI(
     title="小予情绪智能仪表板",
     description="SoulCompanion AI - ASD儿童多模态情绪智能监控系统",
     version=APP_VERSION,
+    dependencies=[Depends(_legacy_mode_boundary)],
 )
+from web.security import install_security
 
 # ─── CORS ─────────────────────────────────────────────────────────────
-# 默认只放行本机来源。注意：allow_origins=["*"] 与 allow_credentials=True
-# 是互斥的（浏览器会直接拒绝该组合），因此在通配模式下强制关闭凭证。
+# Origins are validated by config; the local boundary applies to every route.
 _origins = [o.strip() for o in (CORS_ORIGINS or "").split(",") if o.strip()]
-_wildcard = "*" in _origins
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if _wildcard else _origins,
-    allow_credentials=not _wildcard,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_origins,
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Accept", "Content-Type"],
 )
+install_security(app)
 
 # ─── Bridge Integration ──────────────────────────────────────────────
 # When a bridge is injected, all endpoints read from the bridge's shared state.
 # When no bridge, endpoints create standalone module instances.
 
 _bridge = None  # Optional[EmotionBridge]
+_runtime = None
+_module_lock = RLock()
 
 
 def set_bridge(bridge):
@@ -77,6 +90,23 @@ def set_bridge(bridge):
     """
     global _bridge
     _bridge = bridge
+    if "product_service" in globals():
+        product_service.invalidate_status()
+
+
+def set_runtime(runtime):
+    """Attach the native robot's status provider, without importing heavy models."""
+    global _runtime
+    _runtime = runtime
+    product_service.invalidate_status()
+
+
+def _serialized_initialization(factory):
+    @wraps(factory)
+    def get_instance():
+        with _module_lock:
+            return factory()
+    return get_instance
 
 
 def _has_bridge() -> bool:
@@ -93,6 +123,7 @@ _embodied_engine = None
 _intervention_engine = None
 
 
+@_serialized_initialization
 def _get_memory_axis():
     global _memory_axis
     if _memory_axis is None:
@@ -101,6 +132,7 @@ def _get_memory_axis():
     return _memory_axis
 
 
+@_serialized_initialization
 def _get_fusion_engine():
     global _fusion_engine
     if _fusion_engine is None:
@@ -109,6 +141,7 @@ def _get_fusion_engine():
     return _fusion_engine
 
 
+@_serialized_initialization
 def _get_behavior_sync():
     global _behavior_sync
     if _behavior_sync is None:
@@ -117,6 +150,7 @@ def _get_behavior_sync():
     return _behavior_sync
 
 
+@_serialized_initialization
 def _get_embodied_engine():
     global _embodied_engine
     if _embodied_engine is None:
@@ -125,6 +159,7 @@ def _get_embodied_engine():
     return _embodied_engine
 
 
+@_serialized_initialization
 def _get_intervention_engine():
     global _intervention_engine
     if _intervention_engine is None:
@@ -136,6 +171,9 @@ def _get_intervention_engine():
 # ─── Helper: get modules from bridge or standalone ───────────────────
 
 def _memory():
+    if DEMO_MODE:
+        from web.service import ProductError
+        raise ProductError("DEMO_MODE", "Real history is disabled in explicit demo mode", 409)
     return _bridge.get_memory() if _has_bridge() else _get_memory_axis()
 
 def _fusion():
@@ -149,6 +187,15 @@ def _embodied():
 
 def _intervention():
     return _bridge.get_intervention_engine() if _has_bridge() else _get_intervention_engine()
+
+
+from web.product import install_product_api
+from web.service import ProductService
+
+product_service = ProductService(
+    bridge_getter=lambda: _bridge, runtime_getter=lambda: _runtime, memory_getter=_memory,
+)
+install_product_api(app, product_service)
 
 
 # ─── Static Files & Templates ─────────────────────────────────────────
@@ -165,17 +212,17 @@ templates = Jinja2Templates(directory=templates_dir) if os.path.exists(templates
 # ─── Dashboard Page ───────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+def dashboard(request: Request):
     """Serve the main dashboard page."""
     if templates:
-        return templates.TemplateResponse(request, "dashboard.html")
+        return templates.TemplateResponse(request, "dashboard.html", {"system_mode": "demo" if DEMO_MODE else "real"})
     return HTMLResponse("<h1>小予情绪智能仪表板</h1><p>Templates not found. Use /docs for API.</p>")
 
 
 # ─── Emotion API ──────────────────────────────────────────────────────
 
 @app.get("/api/emotion/current")
-async def get_current_emotion():
+def get_current_emotion():
     """Get the current fused emotion state."""
     if _has_bridge():
         snap = _bridge.get_snapshot()
@@ -198,7 +245,7 @@ async def get_current_emotion():
 
 
 @app.get("/api/emotion/history")
-async def get_emotion_history(limit: int = Query(50, ge=1, le=500),
+def get_emotion_history(limit: int = Query(50, ge=1, le=500),
                               offset: int = Query(0, ge=0, le=1000000)):
     """Get emotion history records."""
     records = _memory().get_records(limit=limit, offset=offset)
@@ -220,7 +267,7 @@ async def get_emotion_history(limit: int = Query(50, ge=1, le=500),
 
 
 @app.get("/api/emotion/trends")
-async def get_emotion_trends(period: str = "daily"):
+def get_emotion_trends(period: Literal["hourly", "daily", "weekly"] = "daily"):
     """Get emotion trend analysis."""
     trend = _memory().get_trend_analysis(period=period)
     return {
@@ -236,21 +283,21 @@ async def get_emotion_trends(period: str = "daily"):
 
 
 @app.get("/api/emotion/periodicity")
-async def get_emotion_periodicity(lookback_days: int = Query(30, ge=1, le=365)):
+def get_emotion_periodicity(lookback_days: int = Query(30, ge=1, le=365)):
     """Get emotion periodicity patterns."""
     patterns = _memory().detect_periodicity(lookback_days=lookback_days)
     return {"patterns": patterns, "lookback_days": lookback_days}
 
 
 @app.get("/api/emotion/counts")
-async def get_emotion_counts(days: int = Query(7, ge=1, le=365)):
+def get_emotion_counts(days: int = Query(7, ge=1, le=365)):
     """Get emotion category counts."""
     counts = _memory().get_emotion_counts(days=days)
     return {"counts": counts, "days": days}
 
 
 @app.get("/api/emotion/valence-series")
-async def get_valence_series(days: int = Query(7, ge=1, le=365)):
+def get_valence_series(days: int = Query(7, ge=1, le=365)):
     """Get timestamped valence series for charting."""
     series = _memory().get_valence_series(days=days)
     return {
@@ -262,7 +309,7 @@ async def get_valence_series(days: int = Query(7, ge=1, le=365)):
 # ─── Behavior API ─────────────────────────────────────────────────────
 
 @app.get("/api/behavior/status")
-async def get_behavior_status():
+def get_behavior_status():
     """Get current behavior engine status."""
     # 无论是否接入桥接器，行为引擎实例都从 _embodied() 取（桥接模式下
     # 它会返回桥接器内部的那一份），因此无需分支。
@@ -270,7 +317,7 @@ async def get_behavior_status():
 
 
 @app.get("/api/behavior/command")
-async def get_behavior_command():
+def get_behavior_command():
     """Get the latest behavior command."""
     if _has_bridge():
         snap = _bridge.get_snapshot()
@@ -292,7 +339,7 @@ async def get_behavior_command():
 # ─── Parent Report API ───────────────────────────────────────────────
 
 @app.get("/api/parent/report")
-async def get_parent_report(days: int = Query(7, ge=1, le=365)):
+def get_parent_report(days: int = Query(7, ge=1, le=365)):
     """Get parent report as JSON."""
     report = _intervention().generate_parent_report(days=days)
     return {
@@ -314,7 +361,7 @@ async def get_parent_report(days: int = Query(7, ge=1, le=365)):
 
 
 @app.get("/api/parent/report.md", response_class=PlainTextResponse)
-async def get_parent_report_markdown(days: int = Query(7, ge=1, le=365)):
+def get_parent_report_markdown(days: int = Query(7, ge=1, le=365)):
     """Get parent report as Markdown."""
     return _intervention().generate_parent_report_markdown(days=days)
 
@@ -322,7 +369,7 @@ async def get_parent_report_markdown(days: int = Query(7, ge=1, le=365)):
 # ─── Intervention API ────────────────────────────────────────────────
 
 @app.get("/api/intervention/last")
-async def get_last_intervention():
+def get_last_intervention():
     """Get the last intervention plan."""
     if _has_bridge():
         snap = _bridge.get_snapshot()
@@ -351,7 +398,7 @@ async def get_last_intervention():
 # ─── Risk Detection API ──────────────────────────────────────────────
 
 @app.get("/api/risk/triggers")
-async def get_risk_triggers(window_minutes: int = 60):
+def get_risk_triggers(window_minutes: int = Query(60, ge=1, le=525600)):
     """Get current risk triggers."""
     if _has_bridge():
         snap = _bridge.get_snapshot()
@@ -372,7 +419,7 @@ async def get_risk_triggers(window_minutes: int = 60):
 # ─── Bridge Status API ───────────────────────────────────────────────
 
 @app.get("/api/bridge/status")
-async def get_bridge_status():
+def get_bridge_status():
     """Get the emotion bridge integration status."""
     if _has_bridge():
         snap = _bridge.get_snapshot()
@@ -394,40 +441,30 @@ async def get_bridge_status():
 
 # ─── System Status API ───────────────────────────────────────────────
 
-@app.get("/healthz")
-async def healthz():
+@app.get("/healthz", response_model=Liveness)
+def healthz():
     """Process liveness only; does not initialize models, hardware, or storage."""
     return {"status": "ok", "version": APP_VERSION}
 
 
-@app.get("/api/system/status")
-async def get_system_status():
-    """Get overall system health status."""
-    bridge_connected = _has_bridge()
-    bridge_running = _bridge.is_running if bridge_connected else False
+@app.get("/readyz", response_model=SystemStatus, responses={503: {"model": SystemStatus}})
+def readyz(response: Response):
+    status = product_service.system_status()
+    if status.status == "unavailable":
+        response.status_code = 503
+    return status
 
-    return {
-        "status": "running" if (bridge_connected and bridge_running) else "standalone",
-        "timestamp": datetime.now().isoformat(),
-        "bridge": {
-            "connected": bridge_connected,
-            "running": bridge_running,
-        },
-        "modules": {
-            "fusion_engine": True,
-            "memory_axis": True,
-            "behavior_sync": True,
-            "embodied_engine": True,
-            "intervention_engine": True,
-        },
-        "version": APP_VERSION,
-    }
+
+@app.get("/api/system/status", response_model=SystemStatus, deprecated=True)
+def get_system_status():
+    """Get overall system health status."""
+    return product_service.system_status()
 
 
 # ─── Skill-driven UI Generation ──────────────────────────────────────
 
 @app.get("/api/skill/emotion-panel")
-async def skill_emotion_panel():
+def skill_emotion_panel():
     """Generate Emotion Live Panel configuration for skill-driven UI."""
     return {
         "panel": "emotion_live",
@@ -444,7 +481,7 @@ async def skill_emotion_panel():
 
 
 @app.get("/api/skill/emotion-timeline")
-async def skill_emotion_timeline():
+def skill_emotion_timeline():
     """Generate Emotion Timeline configuration for skill-driven UI."""
     return {
         "panel": "emotion_timeline",
@@ -460,7 +497,7 @@ async def skill_emotion_timeline():
 
 
 @app.get("/api/skill/behavior-monitor")
-async def skill_behavior_monitor():
+def skill_behavior_monitor():
     """Generate Behavior Monitor configuration for skill-driven UI."""
     return {
         "panel": "behavior_monitor",
@@ -476,7 +513,7 @@ async def skill_behavior_monitor():
 
 
 @app.get("/api/skill/parent-insight")
-async def skill_parent_insight():
+def skill_parent_insight():
     """Generate Parent Insight Panel configuration for skill-driven UI."""
     return {
         "panel": "parent_insight",
@@ -494,7 +531,7 @@ async def skill_parent_insight():
 
 
 @app.get("/api/skill/dashboard-layout")
-async def skill_dashboard_layout():
+def skill_dashboard_layout():
     """Get the full dashboard layout configuration."""
     return {
         "dashboard": "soulcompanion_emotion",
@@ -524,5 +561,5 @@ if __name__ == "__main__":
     import uvicorn
 
     # 默认只绑定本机：看板上是儿童的情绪数据，不应默认暴露到局域网。
-    # 需要局域网访问时用 `python -m web.app --host 0.0.0.0` 显式开启。
-    uvicorn.run(app, host=DASHBOARD_HOST, port=DASHBOARD_PORT)
+    # 本交付版本只允许本机操作，不提供远程入口。
+    uvicorn.run(app, host=DASHBOARD_HOST, port=DASHBOARD_PORT, proxy_headers=False)

@@ -7,13 +7,12 @@ Stores emotion records in SQLite, provides:
 - Emotion trend analysis
 - Behavior trigger mechanism
 
-Extends existing core/memory.py without modifying it.
+Shares the connection lifecycle with the legacy core/memory.py storage.
 """
 from __future__ import annotations
 
 import logging
 import os
-import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -22,6 +21,7 @@ try:
 except ImportError:
     DATABASE_PATH = "data/emotional_db.sqlite"
 from emotion.models import EmotionRecord, EmotionState, EmotionTrend
+from core.memory import SCHEMA_VERSION, SchemaVersionError, database_connection
 
 logger = logging.getLogger("MemoryAxis")
 
@@ -64,19 +64,35 @@ class MemoryAxis:
         logger.info(f"✅ [情绪记忆] 记忆轴已就绪 (db: {self.db_path})")
 
     def _init_db(self) -> None:
-        """Initialize SQLite database with emotion_records table."""
+        """Apply the local single-child schema transactionally without discarding old data."""
         # 确保数据目录存在：空目录不会被 git 跟踪，新克隆的仓库没有 data/
         db_dir = os.path.dirname(os.path.abspath(self.db_path))
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version > SCHEMA_VERSION:
+                raise SchemaVersionError(
+                    f"Database schema {version} is newer than supported version {SCHEMA_VERSION}; upgrade the application"
+                )
             # WAL 模式允许"写入线程"与"读取线程"并发，避免看板查询被写入阻塞
             conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=5000")
-            conn.execute(_CREATE_TABLE)
-            for idx_sql in _CREATE_INDEXES:
-                conn.execute(idx_sql)
+            conn.execute("BEGIN IMMEDIATE")
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version > SCHEMA_VERSION:
+                raise SchemaVersionError(
+                    f"Database schema {version} is newer than supported version {SCHEMA_VERSION}; upgrade the application"
+                )
+            if version == 0:
+                conn.execute(_CREATE_TABLE)
+                for idx_sql in _CREATE_INDEXES:
+                    conn.execute(idx_sql)
+                conn.execute("CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                conn.execute(
+                    "INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('installation_scope', 'single_child')"
+                )
+                conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     # ─── Recording ────────────────────────────────────────────────────
 
@@ -89,7 +105,7 @@ class MemoryAxis:
             context: What was happening (e.g., "自由对话", "打招呼练习")
             source_text: What the child said (if applicable)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             conn.execute(
                 """INSERT INTO emotion_records
                    (timestamp, category, valence, arousal, cause, context, source_text, confidence)
@@ -115,7 +131,7 @@ class MemoryAxis:
 
         Compatible with existing core/memory.py interface.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT valence FROM emotion_records ORDER BY timestamp DESC LIMIT ?",
                 (limit,),
@@ -128,19 +144,26 @@ class MemoryAxis:
         # Sum of recent valences (positive = good trend, negative = bad trend)
         return round(sum(valences))
 
-    def get_trend_analysis(self, period: str = "daily") -> EmotionTrend:
+    def get_trend_analysis(
+        self, period: str = "daily", days: Optional[int] = None
+    ) -> EmotionTrend:
         """
         Analyze emotion trends for a given period.
 
         Args:
             period: "hourly", "daily", or "weekly"
+            days: Explicit report window, overriding the period's default length.
 
         Returns:
             EmotionTrend with aggregated analysis
         """
         now = datetime.now()
 
-        if period == "hourly":
+        if days is not None:
+            if days < 1:
+                raise ValueError("days must be positive")
+            start = now - timedelta(days=days)
+        elif period == "hourly":
             start = now - timedelta(hours=1)
         elif period == "daily":
             start = now - timedelta(days=1)
@@ -151,7 +174,7 @@ class MemoryAxis:
 
         start_str = start.strftime("%Y-%m-%dT%H:%M:%S")
 
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             cursor = conn.execute(
                 """SELECT category, valence, arousal, timestamp
                    FROM emotion_records
@@ -217,7 +240,7 @@ class MemoryAxis:
         start = datetime.now() - timedelta(days=lookback_days)
         start_str = start.strftime("%Y-%m-%dT%H:%M:%S")
 
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             cursor = conn.execute(
                 """SELECT timestamp, category, valence
                    FROM emotion_records
@@ -278,7 +301,7 @@ class MemoryAxis:
 
         triggers: List[str] = []
 
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             # Check for sustained negative emotion
             cursor = conn.execute(
                 """SELECT COUNT(*), AVG(valence)
@@ -325,7 +348,7 @@ class MemoryAxis:
         self, limit: int = 100, offset: int = 0
     ) -> List[EmotionRecord]:
         """Retrieve emotion records from database."""
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             cursor = conn.execute(
                 """SELECT timestamp, category, valence, arousal, cause, context, source_text
                    FROM emotion_records
@@ -353,7 +376,7 @@ class MemoryAxis:
         start = datetime.now() - timedelta(days=days)
         start_str = start.strftime("%Y-%m-%dT%H:%M:%S")
 
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
             cursor = conn.execute(
                 """SELECT category, COUNT(*) as cnt
                    FROM emotion_records
@@ -364,12 +387,50 @@ class MemoryAxis:
             )
             return {row[0]: row[1] for row in cursor.fetchall()}
 
-    def get_valence_series(self, days: int = 7) -> List[Tuple[str, float]]:
-        """Get timestamped valence series for charting."""
+    def get_history_page(
+        self, days: int = 7, limit: int = 50, offset: int = 0
+    ) -> Tuple[List[EmotionRecord], int]:
+        """Return a stable page and its total from the same SQLite read snapshot."""
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+        with database_connection(self.db_path) as conn:
+            conn.execute("BEGIN")
+            total = conn.execute(
+                "SELECT COUNT(*) FROM emotion_records WHERE timestamp >= ?", (start,)
+            ).fetchone()[0]
+            rows = conn.execute(
+                """SELECT timestamp, category, valence, arousal, cause
+                   FROM emotion_records WHERE timestamp >= ?
+                   ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?""",
+                (start, limit, offset),
+            ).fetchall()
+        return [EmotionRecord(timestamp=ts, category=cat, valence=v, arousal=a, cause=c)
+                for ts, cat, v, a, c in rows], total
+
+    def get_valence_series(
+        self, days: int = 7, max_points: Optional[int] = None
+    ) -> List[Tuple[str, float]]:
+        """Get chart points, optionally sampling in SQL to bound the response size."""
         start = datetime.now() - timedelta(days=days)
         start_str = start.strftime("%Y-%m-%dT%H:%M:%S")
 
-        with sqlite3.connect(self.db_path) as conn:
+        with database_connection(self.db_path) as conn:
+            if max_points is not None:
+                if max_points < 2:
+                    raise ValueError("max_points must be at least 2")
+                cursor = conn.execute(
+                    """WITH ranked AS (
+                        SELECT timestamp, valence,
+                               ROW_NUMBER() OVER (ORDER BY timestamp, id) AS position,
+                               COUNT(*) OVER () AS total
+                        FROM emotion_records WHERE timestamp >= ?
+                    )
+                    SELECT timestamp, valence FROM ranked
+                    WHERE total <= ? OR position = total
+                       OR (position - 1) % MAX(1, (total - 2) / (? - 1) + 1) = 0
+                    ORDER BY timestamp, position""",
+                    (start_str, max_points, max_points),
+                )
+                return [(row[0], row[1]) for row in cursor.fetchall()]
             cursor = conn.execute(
                 """SELECT timestamp, valence
                    FROM emotion_records

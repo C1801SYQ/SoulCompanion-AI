@@ -1,401 +1,224 @@
-# 💠 小予 (SoulCompanion AI)
+# 小予 · SoulCompanion AI
 
-## ASD 儿童多模态情绪智能陪伴干预机器人
+更新：2026-10-02。
 
----
+面向 ASD 儿童情绪陪伴场景的本地多模态软件。交付范围是**单台电脑、单名本地管理员、单儿童档案**：实时看板、历史记录、家长报告、组件状态、隐私设置和数据维护。核心情绪融合与行为规则保留原有实现。
 
-## 工程入口 / Engineering entry points
+这是陪伴与研究辅助软件，情绪推断和报告分数不提供临床诊断或疗效判断。真实设备、模型及执行器需要另行实机验收。
 
-**研究原型：** 将多模态感知、情绪记忆、行为反馈与 Web 看板串联。
-静态演示、本地看板和设备集成是不同运行模式；看板正常不代表设备感知已工作。
+## Architecture / 架构
 
-- [部署与配置指南](DEPLOY.md)：运行模式、持久化、CLI 配置和已知限制。
-- 看板启动：`python -m web.app`；轻量依赖：`requirements-web.txt`。
-- 软件回归：安装 Web 与开发依赖后运行 `python -m pytest`。
-- 存活检查：`GET /healthz`；设备集成状态：`GET /api/bridge/status`。
+```mermaid
+flowchart LR
+  Vision[摄像头 / VisionEngine] --> Bridge[EmotionBridge · 0.5秒]
+  Speech[麦克风 / SpeechEngine] --> Bridge
+  Bridge --> Fusion[FusionEngine]
+  Fusion --> Memory[MemoryAxis / SQLite]
+  Fusion --> Behavior[BehaviorSync / EmbodiedEngine]
+  Fusion --> Intervention[InterventionEngine]
+  Memory --> Intervention
+  Bridge --> Snapshot[内存快照]
+  Snapshot --> Service[ProductService]
+  Memory --> Service
+  Service --> API[FastAPI /api/v1]
+  API --> UI[Vanilla JS 看板]
+  Robot[机器人主循环] --> LLM[本地 Ollama 后台决策]
+  LLM --> TTS[本地语音输出]
+```
 
-本轮新增 API 查询范围校验、无副作用的存活接口，以及环境变量与 CLI 的配置优先级测试。
-项目不提供临床诊断或疗效保证。
+一个进程内共享设备状态，使用一个 Web worker。实时快照不查询历史数据库或调用模型；页面每秒读取一次快照，系统状态约 7 秒、历史与趋势至少 30 秒、报告至少 60 秒或手动刷新。数据库操作独立关闭连接。
 
-## 📋 项目简介
+原始架构、风险分级和设计取舍见 [PRODUCT_AUDIT](docs/PRODUCT_AUDIT.md)。接口文档启动后访问 `/docs`；正式接口采用具名 Pydantic 模型与统一错误、请求编号。
 
-小予是一个面向 ASD（自闭症谱系障碍）儿童的智能陪伴机器人系统，具备：
+## Quick Start / 快速启动
 
-- 🧠 **多模态情绪融合** — 视觉 + 语音 + 环境信号实时融合分析
-- 💾 **长期情绪记忆** — SQLite 持久化，趋势分析，周期性检测
-- 🤖 **情绪驱动行为** — 呼吸灯、心跳模拟、耳朵摆动、头部倾斜
-- 💬 **教育型干预** — 温柔引导，不命令不批评
-- 👨‍👩‍👦 **家长洞察** — 每周情绪报告，风险预警
-- 🌐 **实时仪表板** — Web 可视化，4 面板监控
+已验证环境：Windows、Python **3.12**。Web 模式只需要轻量依赖，不下载感知模型，也不需要摄像头。
 
----
-
-## 🛠️ 环境要求
-
-| 项目 | 要求 |
-|------|------|
-| 操作系统 | Windows 10/11 |
-| Python | 3.10 - 3.12 |
-| 摄像头 | USB 或内置摄像头 |
-| 麦克风 | 任意可用麦克风 |
-| 内存 | ≥ 8GB（模型加载需要） |
-| 磁盘 | ≥ 2GB（模型文件） |
-
----
-
-## 🚀 快速开始
-
-### 第一步：克隆项目
-
-```bash
+```powershell
 git clone https://github.com/C1801SYQ/SoulCompanion-AI.git
 cd SoulCompanion-AI
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt
+.\.venv\Scripts\python.exe -m web.app
 ```
 
-### 第二步：安装依赖
+打开 http://127.0.0.1:8000 。Linux 可将上述解释器替换成 `.venv/bin/python`。
 
-```bash
-# 升级 pip
-python -m pip install --upgrade pip
+页面会显示 `REAL` 与实际 SQLite 历史；未连接设备时明确显示“暂无感知数据”、风险未知和组件降级。空数据库的报告没有健康分数。`/healthz` 检查存活；`/readyz` 返回正常、明确降级原因或不可用（503）。
 
-# 安装 NumPy（必须先装，兼容性问题）
-pip install "numpy<2.0.0"
+本次改动尚未提交或推送：远程克隆目前仍是原基准版本。维护者合并交付改动后，上述克隆流程才能获得本版；本轮已用干净源码副本与新虚拟环境验证同等安装流程。
 
-# 安装核心依赖
-pip install -r requirements.txt
+## Real Mode / 真实模式
 
-# 安装 Web 仪表板依赖
-pip install fastapi uvicorn jinja2 python-multipart
+```powershell
+# 只读取本地历史，不开启摄像头、麦克风或机器人
+.\.venv\Scripts\python.exe launch.py --no-robot
+
+# 安装感知依赖并准备下述模型、设备后，启动完整本地链路
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe launch.py
 ```
 
-> ⚠️ 如果 `pyaudio` 安装失败：
-> ```bash
-> pip install pipwin
-> pipwin install pyaudio
-> ```
+完整模式的摄像头、麦克风、Vosk、SER、ONNX、Ollama 和执行器状态分别检查。模型缺失或设备失败会显示原因。`--hardware` 是请求硬件的选项；本仓库提供的执行器仍为模拟器，不能据此声称实体机器人已连接。按 Ctrl+C 关闭并释放资源。
 
-### 第三步：下载语音模型
+## Demo Mode / 显式演示
 
-1. 下载 [Vosk 中文模型](https://alphacephei.com/vosk/models) — 选择 `vosk-model-small-cn-0.22`
-2. 解压到项目目录下的 `model/` 文件夹
+完全不采集、不访问真实历史数据库的本地演示：
 
-```
-SoulCompanion-AI/
-├── model/           ← Vosk 模型放这里
-│   ├── am/
-│   ├── conf/
-│   ├── graph/
-│   └── ivector/
-├── models/
-│   ├── onnx_model.onnx          ← 情绪识别模型
-│   ├── ser_model/               ← 语音情感模型
-│   └── haarcascade_frontalface_default.xml
+```powershell
+$env:SOULCOMPANION_DEMO_MODE='true'
+.\.venv\Scripts\python.exe launch.py
 ```
 
-### 第四步：启动系统
+恢复真实模式前在新终端启动，或设置 `$env:SOULCOMPANION_DEMO_MODE='false'`。DEMO 后端禁用真实历史及旧数据接口。
 
-```bash
-# 方式一：完整系统（推荐）
-python launch.py
+页面也提供 `DEMO · 合成演示` 按钮及 `?demo=1`。它们只改变浏览器显示，不停止另一个正在运行的真实采集进程。所有演示内容与导出都标注 `DEMO DATA`。网络错误不会自动切换演示，断线显示 `Backend disconnected · OFFLINE`，无效响应显示 `ERROR`。
 
-# 方式二：仅 Web 仪表板（无摄像头/麦克风）
-python launch.py --no-robot
+静态演示不包含真实数据，不连接 API：
 
-# 方式三：自定义端口
-python launch.py --port 8080
+```powershell
+.\.venv\Scripts\python.exe scripts/build_site.py --out .test-artifacts/site
+.\.venv\Scripts\python.exe -m http.server 8080 --bind 127.0.0.1 --directory .test-artifacts/site
 ```
 
-启动后访问：**http://localhost:8000**
+静态站始终 DEMO，真实模式按钮禁用，包括 `?nodemo=1`。构建器拒绝覆盖未标记的非空目录。Cloudflare 只能托管此合成静态产物，见 [静态发布说明](docs/Cloudflare部署指南.md)。`streamlit_dashboard.py` 是独立旧合成演示；正式入口使用 FastAPI 看板。
 
----
+## Environment Variables / 配置
 
-## 📖 操作手册
+[.env.example](.env.example) 是参考模板，**不会自动加载**。在启动终端设置环境变量；CLI 的 `--host`、`--port` 优先于默认配置。非法配置给出变量名和要求。
 
-### 🎮 启动模式
+| 变量 | 默认值与用途 |
+| --- | --- |
+| `SOULCOMPANION_APP_ENV` | `production`；可选 development/test/production |
+| `SOULCOMPANION_DEMO_MODE` | false；true 禁用真实采集与历史访问 |
+| `SOULCOMPANION_DB` | 项目 `data/emotional_db.sqlite`；可设持久化绝对路径 |
+| `SOULCOMPANION_DASHBOARD_HOST` | 127.0.0.1；仅允许 localhost/回环 IP |
+| `SOULCOMPANION_DASHBOARD_PORT` | 8000；1–65535 |
+| `SOULCOMPANION_CORS_ORIGINS` | 本机 8000 来源；禁止远程和通配来源 |
+| `SOULCOMPANION_LOG_LEVEL` | INFO；DEBUG/INFO/WARNING/ERROR/CRITICAL |
+| `SOULCOMPANION_RATE_LIMIT` | 每分钟 180 次 API 请求，30–10000；所有本机标签页共享 |
+| `SOULCOMPANION_RETENTION_DAYS` | 0 永久保留；1–3650 是手动维护策略，不自动删除 |
+| `OLLAMA_URL` | http://localhost:11434/api/generate；仅允许本地地址，无代理或重定向 |
+| `OLLAMA_MODEL` | gemma3n:e4b；须与本机已安装标签一致 |
+| `OLLAMA_TIMEOUT` | 每次请求总时限 60 秒，1–120；包含连接、响应头和正文，最多重试一次 |
+| `SOULCOMPANION_VISION_MODEL` | models/onnx_model.onnx |
+| `SOULCOMPANION_HAAR_PATH` | models/haarcascade_frontalface_default.xml |
+| `SOULCOMPANION_VOSK_PATH` | model |
+| `SOULCOMPANION_SER_PATH` | models/ser_model |
 
-| 命令 | 说明 | 适用场景 |
-|------|------|----------|
-| `python launch.py` | 完整系统 | 正式使用，有摄像头和麦克风 |
-| `python launch.py --no-robot` | 仅仪表板 | 测试/演示，无硬件 |
-| `python launch.py --no-web` | 无仪表板 | 嵌入式部署 |
-| `python launch.py --port 8080` | 自定义端口 | 端口冲突时 |
-| `python launch.py --hardware` | 硬件模式 | 连接实体机器人 |
-| `streamlit run streamlit_dashboard.py` | Streamlit 版 | 本地 Streamlit 仪表板 |
+模型相对路径按仓库根目录解释。`SOULCOMPANION_API_KEY` 是未使用的旧保留字段，不提供身份认证。
 
-### 🖥️ Web 仪表板说明
+## Models / 模型
 
-启动后打开浏览器访问 `http://localhost:8000`
+完整感知模式需自行提供许可合适且与适配器输入、标签对应的模型：ONNX 情绪模型、Haar 人脸分类器、Vosk 离线模型和本地 Hugging Face SER 模型及特征提取器。模型目录不由软件验收脚本下载。SER 加载明确使用 `local_files_only=True`。
 
-#### 面板 1：🧠 实时情绪状态
+Ollama 由管理员单独安装与启动；`ollama list` 检查模型标签，配置 `OLLAMA_MODEL` 为实际存在的标签。状态探针仅检查本地服务和模型列表。生成失败、超时、非 200、无效 JSON 或空结果使用确定性温和回复；连接或超时最多重试一次，总等待最多约两倍请求时限。正文上限 64KiB，停止时取消当前 socket。
 
-| 指标 | 说明 | 范围 |
-|------|------|------|
-| 情绪图标 | 当前识别到的情绪 | 😊😐😰😢😠 |
-| 置信度 | 情绪识别的可信度 | 0.00 - 1.00 |
-| 效价 (Valence) | 正面/负面程度 | -1.0 ~ +1.0 |
-| 唤醒度 (Arousal) | 兴奋/平静程度 | 0.0 ~ 1.0 |
-| 注意力 | 是否注视摄像头 | 0% - 100% |
+轻量 Web 的锁定依赖见 `requirements-web.txt` 和 `constraints-web.txt`；可选大型感知依赖在 `requirements.txt`，其全部平台/模型组合尚未安装验收。
 
-#### 面板 2：🤖 行为同步状态
+## Hardware / 设备验收
 
-机器人根据情绪自动执行的行为：
+```powershell
+# 默认仅 Fake 软件接口测试；结果明确 verified_hardware=false
+.\.venv\Scripts\python.exe scripts/hardware_smoke_test.py
 
-| 行为 | 触发情绪 | 效果 |
-|------|----------|------|
-| 💓 心跳模拟 | 焦虑/难过/害怕 | 72bpm 安抚震动 |
-| 💡 呼吸灯 | 中性/平静/焦虑 | 缓慢呼吸灯效 |
-| 👂 耳朵摆动 | 开心/注意力低 | 可爱耳朵动作 |
-| 🤔 好奇歪头 | 惊讶/注意力低 | 15° 头部倾斜 |
-| 🗣️ 温柔语音 | 焦虑/难过/害怕 | 降低语速 |
-| 🧊 静止模式 | 生气/过载 | 减少刺激 |
-
-#### 面板 3：📈 情绪趋势
-
-- **效价时间线** — 最近 7 天的情绪变化曲线
-- **主导情绪** — 出现最多的情绪类别
-- **稳定性** — 情绪波动程度（越高越稳定）
-
-#### 面板 4：👨‍👩‍👦 家长洞察
-
-- **情绪健康指数** — 0-100 综合评分
-- **本周亮点** — 积极情绪统计
-- **需要关注** — 风险时段和异常模式
-- **建议** — 针对性的互动建议
-
-### 📡 API 文档
-
-启动后访问 `http://localhost:8000/docs` 查看完整 API 文档
-
-常用端点：
-
-| 端点 | 说明 |
-|------|------|
-| `GET /api/emotion/current` | 当前情绪状态 |
-| `GET /api/emotion/history` | 情绪历史记录 |
-| `GET /api/emotion/trends` | 趋势分析 |
-| `GET /api/behavior/command` | 当前行为命令 |
-| `GET /api/parent/report` | 家长报告 (JSON) |
-| `GET /api/parent/report.md` | 家长报告 (Markdown) |
-| `GET /api/risk/triggers` | 风险触发器 |
-| `GET /api/bridge/status` | 桥接器状态 |
-| `GET /api/skill/*` | Skill 驱动 UI 配置 |
-
-### 🌐 公网访问（远程监控）
-
-将仪表板暴露到公网，供远程查看：
-
-```bash
-# 安装 localtunnel
-npm install -g localtunnel
-
-# 启动完整系统
-python launch.py
-
-# 另开终端，启动隧道
-lt --port 8000
+# 准备设备依赖后进行真实探测；不会自动下载模型
+.\.venv\Scripts\python.exe scripts/hardware_smoke_test.py --real
 ```
 
-会生成一个公网 URL，如 `https://xxx.loca.lt`
+真实探测可能占用摄像头和麦克风。失败状态与检查原因需要逐项处理；软件 Fake 通过不能替代实机验收。本轮未验证实际儿童会话或实体执行器。
 
-> ⚠️ 公网访问时，首次打开需点击 "Click to Continue"
+## Development / 开发
 
-### ☁️ Streamlit Cloud 部署（演示用）
+保留 Vanilla JS、同源 REST 与 SQLite；不加入空的认证、多租户字段或未使用迁移依赖。正式 API 位于 `web/product.py`，应用服务位于 `web/service.py`，契约位于 `web/contracts.py`；旧 GET API 暂时保留同样本机边界。部署请固定为单 worker。
 
-将演示版仪表板部署到 Streamlit Cloud：
+历史记录分页范围为 1/7/30 天，每页 1–500 条；看板每页 20 条。风险状态来自快照，与所选报告日期独立。报告分数是研究规则输出；空数据为 null。
 
-```bash
-# 1. 推送到 GitHub
-git push origin master
+## Testing / 测试
 
-# 2. 访问 https://share.streamlit.io
-# 3. 选择仓库 C1801SYQ/SoulCompanion-AI
-# 4. Main file: streamlit_dashboard.py
-# 5. 点击 Deploy
+Python 3.12、Node.js 24 用于软件检查；CI 不下载感知模型。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt -r requirements-dev.txt
+New-Item -ItemType Directory -Force .test-artifacts
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .test-artifacts/pytest-local
+.\.venv\Scripts\python.exe -m ruff check config.py launch.py main.py core emotion modules hardware reports utils web scripts tests
+.\.venv\Scripts\python.exe scripts/acceptance_smoke.py
+npm ci --ignore-scripts
+npm test
+npm run test:demo
+npm run build
+npm run lint
+npx playwright install chromium
+$env:SOULCOMPANION_PYTHON=(Resolve-Path .\.venv\Scripts\python.exe).Path
+npm run test:e2e
 ```
 
-> 注意：Streamlit Cloud 版本使用演示数据，无法连接本地硬件
+重复 pytest 时使用新的 `--basetemp` 路径；Windows 上旧缓存权限可能影响重复运行。浏览器结果与截图位于 `.test-artifacts/browser-acceptance`。验收脚本使用明确标注的合成记录写入真实临时 SQLite 并请求真实 HTTP 后端，测试分页、报告和重启持久化；它们不会操作默认真实数据库。
 
----
+依赖检查：`python -m pip_audit --disable-pip --no-deps -r constraints-web.txt` 和 `npm audit --audit-level=high`。前者检查轻量运行时全部锁定依赖，未包含可选大型感知依赖。
 
-## 📁 项目结构
+## Production / 生产运行与部署
 
-```
-SoulCompanion-AI/
-├── main.py                      # 机器人主程序（核心循环）
-├── launch.py                    # 统一启动器
-├── config.py                    # 全局配置
-├── streamlit_dashboard.py       # Streamlit 仪表板
-├── requirements.txt             # Python 依赖
-│
-├── emotion/                     # 情绪智能核心模块
-│   ├── __init__.py
-│   ├── models.py                # 共享数据模型
-│   ├── fusion_engine.py         # 多模态情绪融合
-│   ├── memory_axis.py           # 长期情绪记忆
-│   ├── behavior_sync.py         # 情绪→行为映射
-│   ├── embodied_engine.py       # 拟人行为仿真
-│   ├── intervention.py          # 教育型干预系统
-│   └── bridge.py                # 非侵入式集成桥
-│
-├── web/                         # FastAPI Web 仪表板
-│   ├── __init__.py
-│   ├── api.py                   # REST API (20+ 端点)
-│   ├── app.py                   # 应用入口
-│   ├── templates/
-│   │   └── dashboard.html       # Dashboard 模板
-│   └── static/
-│       ├── style.css            # 样式表
-│       └── app.js               # 前端逻辑
-│
-├── modules/                     # 原有核心模块
-│   ├── vision_engine.py         # 视觉引擎 (OpenCV + ONNX)
-│   └── speech_engine.py         # 语音引擎 (Vosk + Wav2Vec2)
-│
-├── utils/
-│   └── audio_player.py          # TTS 语音合成
-│
-├── hardware/
-│   └── controllers/
-│       └── actuators.py         # 硬件控制器
-│
-├── model/                       # Vosk 语音模型
-├── models/                      # 情绪识别模型
-│   ├── onnx_model.onnx
-│   ├── ser_model/
-│   └── haarcascade_frontalface_default.xml
-│
-├── data/
-│   └── emotional_db.sqlite      # 情绪数据库
-│
-├── reports/
-│   └── report_generator.py      # 报告生成器
-│
-├── web_ui.py                    # 原有 Streamlit UI
-├── DEPLOY.md                    # 部署指南
-└── AI_MEMORY.md                 # AI 开发记忆
+采用经过验证的 Windows 原生轻量 Web 部署，完整 Edge 也在原生进程运行。安装、持久化、备份和可选 Linux Docker 配方见 [DEPLOY.md](DEPLOY.md)。本机没有 Docker，本轮不声称镜像已经构建或运行。
+
+GitHub Actions 定义 backend-tests、frontend-build、frontend-tests、lint、dependency-checks；远程结果需要提交后由 GitHub 实际执行，本轮没有推送，不能宣称远程全绿。
+
+## Security / 安全边界
+
+本版本明确采用 **Local-only Product**。本机登录用户是管理员；没有远程家长账户、登录会话或多租户授权。应用拒绝非回环绑定、远程客户端、非法 Host、跨站 Origin 和转发头；CORS 仅控制浏览器来源。所有新版、旧版接口及 API 文档共享边界。
+
+不得通过公网端口、隧道或反向代理分享真实看板。对外演示仅发布合成静态产物。未来远程版本须先实现成熟密码散列、HttpOnly 会话、注销、授权、CSRF、HTTPS 与数据归属迁移。
+
+后端错误返回通用说明和 request_id；日志不记录原始儿童话语、提示词或模型回复。前端动态文本使用 `textContent`，不会将用户或 LLM 字符串作为 HTML 执行。旧 CloudSync 的远程 relay 明确禁用，`EMOTION_RELAY_URL` 配置会被拒绝。
+
+## Privacy / 隐私与数据维护
+
+真实模式可能在本机 SQLite 保存原始语音文本、上下文和推断。正式 v1 历史 API 与默认导出不包括原始文本；兼容旧历史接口仍可能返回原始文本，原因和报告也可能敏感。它们都受同一本机访问边界保护。数据目录、备份、导出、日志和截图应由管理员限制访问，不提交到 Git，不同步到公网目录。Windows 文件模式不等同于完整 ACL 或磁盘加密。
+
+数据库有版本和事务迁移，保留旧数据及索引；更高版本拒绝写入。维护命令只操作现有数据库，输出文件必须不存在，父目录预先创建：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/data_admin.py info
+.\.venv\Scripts\python.exe scripts/data_admin.py backup --output data/before.sqlite
+.\.venv\Scripts\python.exe scripts/data_admin.py export --output data/emotions.json
+.\.venv\Scripts\python.exe scripts/data_admin.py export --output data/emotions.csv
+# 显式包含原始话语：export --output data/raw.json --include-raw
+# 清理30天前记录：先验证备份，再删除；需要明确确认
+.\.venv\Scripts\python.exe scripts/data_admin.py retention --days 30 --backup data/before-retention.sqlite --confirm-delete
+# 删除所有记录，仍然必须备份
+.\.venv\Scripts\python.exe scripts/data_admin.py delete --backup data/before-delete.sqlite --confirm-delete
 ```
 
----
+指定另一数据库：`python scripts/data_admin.py --db <绝对路径> info`。DEMO 模式拒绝真实库维护。备份完整包含原始文本；删除源记录并不会删除备份，也不承诺磁盘残余的法证级擦除。保留期限由管理员显式执行，不是后台定时任务。
 
-## 🔧 常见问题
+## Known Limitations / 已知限制
 
-### Q: 启动时报错 `ModuleNotFoundError: No module named 'vosk'`
-A: 在 PyCharm 的 `File → Settings → Project → Python Interpreter` 中安装 `vosk`
+- 无远程账户、多儿童或多租户；无公网真实数据产品入口。
+- 实际摄像头、麦克风、ONNX/Vosk/SER 模型、Ollama 生成及实体执行器仍需目标机器验收。
+- SQLite 适合单机规模；多个 worker 或多个采集进程不属于当前交付范围。
+- 阻塞的第三方模型/音频调用只能在限定等待后报告停止超时；不能强制安全中断第三方驱动。Ollama HTTP 使用总时限和 socket 取消。
+- 旧 Streamlit 机器人入口已停用，使用统一 FastAPI/launcher 生命周期；独立 Streamlit 合成示例不属于主要验收界面。
+- Docker 与 GitHub Actions 远程运行尚未在本轮实际执行。
 
-### Q: 摄像头打不开
-A: 确保没有其他软件（微信、腾讯会议）占用摄像头
+## Troubleshooting / 故障排查
 
-### Q: 麦克风没反应
-A: 检查 Windows 隐私设置中是否允许应用访问麦克风
+| 现象 | 处理 |
+| --- | --- |
+| `REAL` 但没有情绪 | 检查设备页；Web-only 未连接 bridge 时是预期结果 |
+| `/readyz` degraded | 查看每个组件 reason；缺设备或 Ollama 不应冒充 healthy |
+| `Backend disconnected` | 启动本机后端，确认端口，然后点击重新连接；不会自动 Demo |
+| `ERROR` | 检查通用错误与 request_id；无效响应、429 或契约错误均保留真实模式 |
+| 429 | 多标签页共享限额；关闭多余页面并等待 Retry-After |
+| 数据库不可用/503 | 核对配置路径、目录权限和版本；维护前使用备份，勿删 WAL 文件 |
+| 非法 PORT/HOST | 按错误变量名修正；本版不允许 0.0.0.0 |
+| 静态构建拒绝目标目录 | 选新的空目录，或此前由构建器标记的目录；不删除已有用户文件 |
+| 模型缺失/损坏 | 配置本地兼容模型；查看组件状态，勿用默认中性情绪掩盖失败 |
 
-### Q: Ollama 连接失败
-A: 确保 Ollama 已启动：
-```bash
-ollama serve
-ollama pull gemma4:e4b
-```
+## 版权与许可
 
-### Q: 仪表板显示"演示数据"
-A: 说明机器人核心未启动。检查摄像头和麦克风是否可用，或使用 `python launch.py --no-robot`
+本项目及源代码、文档、设计、模型和数据结构的知识产权归 **予怀团队** 所有，最终解释权归予怀团队。仅供学术研究、教育及团队内部使用；未经书面授权不得商业使用、二次分发或售卖。合作和授权请联系予怀团队。
 
-### Q: Streamlit Cloud 部署失败
-A: 确保 `requirements.txt` 只包含 `streamlit`，不要有其他依赖
+本项目为辅助工具，不能替代专业诊断或治疗；原有许可与免责声明不因本轮工程改动改变。
 
-### Q: 公网隧道断开
-A: localtunnel 免费版不稳定，重新运行 `lt --port 8000` 获取新 URL
-
----
-
-## 📊 系统架构
-
-```
-                    ┌─────────────────────────────────┐
-                    │         main.py (不变)           │
-                    │  ┌──────────┐  ┌──────────┐     │
-                    │  │ Vision   │  │ Speech   │     │
-                    │  │ Engine   │  │ Engine   │     │
-                    │  └────┬─────┘  └────┬─────┘     │
-                    └───────┼─────────────┼───────────┘
-                            │             │
-                            ▼             ▼
-                    ┌─────────────────────────────────┐
-                    │       EmotionBridge (新增)       │
-                    │                                 │
-                    │  ┌──────────┐  ┌──────────┐    │
-                    │  │ Fusion   │→ │ Memory   │    │
-                    │  │ Engine   │  │ Axis     │    │
-                    │  └────┬─────┘  └──────────┘    │
-                    │       │                         │
-                    │  ┌────▼─────┐  ┌──────────┐    │
-                    │  │ Behavior │→ │ Embodied │    │
-                    │  │ Sync     │  │ Engine   │    │
-                    │  └────┬─────┘  └──────────┘    │
-                    │       │                         │
-                    │  ┌────▼─────┐                   │
-                    │  │Interven- │→ 家长报告         │
-                    │  │tion      │                   │
-                    │  └──────────┘                   │
-                    └───────────┬─────────────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────────────────┐
-                    │     Web Dashboard (新增)         │
-                    │  http://localhost:8000           │
-                    │  ┌──────┐ ┌──────┐              │
-                    │  │Emotion│ │Behavior│            │
-                    │  │Panel  │ │Monitor│             │
-                    │  └──────┘ └──────┘              │
-                    │  ┌──────┐ ┌──────┐              │
-                    │  │Time- │ │Parent│              │
-                    │  │line  │ │Insight│             │
-                    │  └──────┘ └──────┘              │
-                    └─────────────────────────────────┘
-```
-
----
-
-## 📝 开发日志
-
-| 轮次 | 类型 | 内容 | 状态 |
-|------|------|------|------|
-| R1 | security | 移除硬编码 API Key | ✅ |
-| R2 | fix | 修复 NameError | ✅ |
-| R3 | security | 修复 SQL 注入 | ✅ |
-| R4 | fix | 修复空 except | ✅ |
-| R5 | fix | 添加线程锁 | ✅ |
-| R6 | fix | 修复 UI 阻塞 | ✅ |
-| R7 | refactor | 统一配置 | ✅ |
-| R8 | refactor | 删除死代码 | ✅ |
-| R9 | refactor | 清理导入 | ✅ |
-| R10 | feat | 情绪智能系统 + Web 仪表板 | ✅ |
-
----
-
-## 📄 版权声明与许可
-
-### 所有权归属
-
-本项目 **SoulCompanion AI（小予智能陪伴机器人）** 及其所有源代码、文档、设计、模型、数据结构等知识产权，均归 **予怀团队** 所有。
-
-### 最终解释权
-
-本项目的最终解释权归 **予怀团队** 所有。任何关于本项目功能、用途、授权、分发的疑问，以予怀团队的解释为准。
-
-### 使用许可
-
-- 本项目仅供学术研究、教育用途及予怀团队内部使用
-- 未经予怀团队书面授权，不得将本项目用于商业用途
-- 未经许可，不得将本项目或其部分代码进行二次分发或售卖
-- 如需合作或授权，请联系予怀团队
-
-### 免责声明
-
-- 本项目为辅助工具，不能替代专业医疗诊断或治疗
-- 使用本项目产生的任何后果，予怀团队不承担相关责任
-- 本项目涉及的 ASD 干预方法仅供参考，请遵循专业医生建议
-
----
-
-> **© 予怀团队 | SoulCompanion AI**
->
-> **💠 小予 — 用科技温暖每一颗星星的孩子**
+© 予怀团队 · SoulCompanion AI

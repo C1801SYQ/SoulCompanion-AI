@@ -1,0 +1,13 @@
+.git
+.codex
+.agents
+.test-artifacts
+.venv*
+node_modules
+data
+models
+dist-site
+__pycache__
+*.sqlite*
+*.db
+.env

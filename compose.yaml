@@ -1,0 +1,23 @@
+# Linux host networking preserves the application's strict loopback boundary.
+# No published ports, reverse proxy, cloud ingress or hardware devices.
+services:
+  dashboard:
+    build: .
+    network_mode: host
+    environment:
+      SOULCOMPANION_APP_ENV: production
+      SOULCOMPANION_DB: /data/emotional_db.sqlite
+      SOULCOMPANION_DEMO_MODE: 'false'
+    volumes:
+      - companion-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 15s
+volumes:
+  companion-data:

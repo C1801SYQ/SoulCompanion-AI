@@ -1,259 +1,138 @@
-"""
-launch.py - Unified Launcher for SoulCompanion AI
-
-Starts all three systems in a single process:
-  1. Robot core loop (main.py's SoulCompanionRobot)
-  2. Emotion bridge (background thread)
-  3. Web dashboard (FastAPI on port 8000)
-
-Usage:
-    python launch.py                    # Start everything (default port 8000)
-    python launch.py --port 8080        # Custom port
-    python launch.py --no-robot         # Dashboard only (no robot loop)
-    python launch.py --no-web           # Robot + bridge only (no dashboard)
-    python launch.py --hardware         # Enable hardware mode
-
-Architecture:
-    ┌──────────────────────────────────────────────────────────┐
-    │  launch.py                                               │
-    │                                                          │
-    │  Thread 1: robot.run()          ← main.py loop           │
-    │  Thread 2: bridge.start()       ← emotion processing     │
-    │  Thread 3: uvicorn.run()        ← web dashboard          │
-    │                                                          │
-    │  Shared: robot.vision ←──── bridge reads ────→ dashboard │
-    │          robot.speech ←──── bridge reads ────→ dashboard │
-    └──────────────────────────────────────────────────────────┘
-"""
+"""Run the local edge runtime and dashboard with bounded resource cleanup."""
 from __future__ import annotations
 
 import argparse
 import logging
-import sys
-import os
 import threading
 import time
-
-# Fix Windows console encoding for emoji support
-if sys.platform == "win32":
-    os.environ["PYTHONIOENCODING"] = "utf-8"
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger("Launcher")
 
 
-def launch(
-    port: int = 8000,
-    host: str = "127.0.0.1",
-    enable_robot: bool = True,
-    enable_web: bool = True,
-    hardware: bool = False,
-):
-    """
-    Launch the full SoulCompanion AI system.
+def launch(port=None, host=None, enable_robot=True, enable_web=True, hardware=False):
+    import config
 
-    Args:
-        port: Web dashboard port
-        host: Web dashboard host
-        enable_robot: Whether to start the robot loop
-        enable_web: Whether to start the web dashboard
-        hardware: Whether to enable hardware mode
-    """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(name)s] %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
-    logger.info("=" * 60)
-    logger.info("💠 SoulCompanion AI - 多模态情绪智能系统")
-    logger.info("=" * 60)
-
-    # ── Step 1: Initialize robot ──
-    robot = None
-    if enable_robot:
-        logger.info("🤖 [1/3] 初始化机器人核心...")
-        try:
-            from main import SoulCompanionRobot
-            robot = SoulCompanionRobot()
-            logger.info("✅ 机器人核心已就绪")
-        except Exception as e:
-            logger.error(f"❌ 机器人初始化失败: {e}")
-            if not enable_web:
-                logger.error("无法继续，退出")
-                return
-            logger.warning("⚠️ 继续启动（仅Web模式）")
-            enable_robot = False
-
-    # ── Step 2: Initialize emotion bridge ──
-    bridge = None
-    logger.info("🧠 [2/3] 初始化情绪桥接器...")
-
-    try:
-        from emotion.bridge import EmotionBridge
-
-        # Define getters that read from the robot's engines
-        if robot:
-            get_vision = robot.vision.get_latest_state
-            # 非破坏性读取：主循环仍需消费语音事件，桥接器只"窥视"，
-            # 否则两个消费者会互相抢事件（先读到的一方把事件吃掉）。
-            get_speech = robot.speech.peek_latest_text
-        else:
-            # No robot: provide dummy getters for standalone dashboard
-            def get_vision():
-                return {"face_detected": False, "emotion": "neutral", "attention_loss_time": 0.0}
-            def get_speech():
-                return None
-
-        bridge = EmotionBridge(
-            get_vision_state=get_vision,
-            get_speech_state=get_speech,
-            hardware_available=hardware,
-            cycle_interval=0.5,
-        )
-
-        # Set intervention callback (log interventions)
-        def on_intervention(plan):
-            if plan.guidance_text:
-                logger.info(f"💬 [干预] {plan.guidance_text}")
-
-        def on_behavior(cmd):
-            if cmd.actions:
-                action_names = ", ".join(a.value for a in cmd.actions[:3])
-                logger.debug(f"🎬 [行为] {action_names}")
-
-        bridge.set_callbacks(
-            on_intervention=on_intervention,
-            on_behavior=on_behavior,
-        )
-
-        bridge.start()
-        logger.info("✅ 情绪桥接器已启动")
-    except Exception as e:
-        logger.error(f"❌ 桥接器初始化失败: {e}")
-        if not enable_web:
-            return
-        logger.warning("⚠️ 继续启动（无桥接器）")
-
-    # ── Step 3: Start web dashboard ──
+    port = config.DASHBOARD_PORT if port is None else port
+    host = config.DASHBOARD_HOST if host is None else host
     if enable_web:
-        logger.info(f"🌐 [3/3] 启动Web仪表板 ({host}:{port})...")
+        config.validate_bind_host(host)
+        if not isinstance(port, int) or not 1 <= port <= 65535:
+            raise config.ConfigurationError("Dashboard port must be between 1 and 65535")
+    logging.basicConfig(
+        level=getattr(logging, config.LOG_LEVEL),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+    if config.DEMO_MODE:
+        enable_robot = False
+        logger.info("Explicit browser demo: edge capture and real storage disabled")
+    if not enable_robot and not enable_web:
+        logger.info("No runtime or dashboard requested")
+        return
 
-        try:
-            from web.api import app, set_bridge
+    robot = bridge = server = web_thread = robot_thread = None
+    try:
+        if enable_robot:
+            try:
+                from main import SoulCompanionRobot
+                robot = SoulCompanionRobot()
+                robot.hardware_requested = hardware
+            except Exception as exc:
+                logger.warning("robot_initialize_failed type=%s", type(exc).__name__)
+                if not enable_web:
+                    return
+        if robot is not None:
+            from emotion.bridge import EmotionBridge
+            bridge = EmotionBridge(
+                get_vision_state=robot.vision.get_latest_state,
+                get_speech_state=robot.speech.peek_latest_text,
+                hardware_available=hardware,
+                cycle_interval=0.5,
+            )
+            bridge.start()
+        else:
+            logger.info("No capture bridge attached; live child data is unavailable")
 
-            if bridge:
-                set_bridge(bridge)
-
-            # Start uvicorn in a background thread so main thread stays responsive
+        if enable_web:
+            from web.api import app, set_bridge, set_runtime
             import uvicorn
 
+            set_bridge(bridge)
+            set_runtime(robot)
+            server = uvicorn.Server(uvicorn.Config(
+                app, host=host, port=port, log_level=config.LOG_LEVEL.lower(),
+                proxy_headers=False,
+            ))
+
             def run_web():
-                uvicorn.run(
-                    app,
-                    host=host,
-                    port=port,
-                    log_level="warning",  # Reduce noise
-                )
+                try:
+                    server.run()
+                except BaseException as exc:
+                    logger.error("web_server_failed type=%s", type(exc).__name__)
 
             web_thread = threading.Thread(target=run_web, daemon=True, name="WebServer")
             web_thread.start()
+            deadline = time.monotonic() + 5.0
+            while not server.started:
+                if not web_thread.is_alive() or time.monotonic() >= deadline:
+                    logger.error("Web server failed to become ready")
+                    return
+                time.sleep(0.05)
+            logger.info("Dashboard ready: http://%s:%s", host, port)
 
-            logger.info(f"✅ Web仪表板已启动: http://{host}:{port}")
-            logger.info(f"📖 API文档: http://{host}:{port}/docs")
-        except ImportError:
-            logger.error("❌ FastAPI/uvicorn 未安装。请运行: pip install -r requirements-web.txt")
-        except Exception as e:
-            logger.error(f"❌ Web启动失败: {e}")
-    else:
-        logger.info("🌐 [3/3] Web仪表板已禁用")
-
-    # ── Step 4: Start robot loop (blocking on main thread) ──
-    if enable_robot and robot:
-        logger.info("")
-        logger.info("🚀 系统就绪！机器人开始运行...")
-        logger.info("   按 Ctrl+C 停止")
-        logger.info("")
-
-        try:
-            robot.run()  # This blocks until KeyboardInterrupt
-        except KeyboardInterrupt:
-            logger.info("")
-            logger.info("⏹️ 收到停止信号...")
-        finally:
-            shutdown(robot, bridge)
-    else:
-        # No robot: keep main thread alive for web dashboard
-        logger.info("")
-        logger.info(f"🌐 仪表板运行中: http://{host}:{port}")
-        logger.info("   按 Ctrl+C 停止")
-        logger.info("")
-
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("")
-            logger.info("⏹️ 收到停止信号...")
-            shutdown(None, bridge)
+        if robot is not None:
+            robot_thread = threading.Thread(target=robot.run, daemon=True, name="RobotCore")
+            robot_thread.start()
+        while True:
+            if web_thread is not None and not web_thread.is_alive():
+                return
+            if robot_thread is not None and not robot_thread.is_alive():
+                return
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested")
+    except Exception as exc:
+        logger.error("startup_failed type=%s", type(exc).__name__)
+    finally:
+        shutdown(robot, bridge, server, web_thread)
+        if robot_thread and robot_thread is not threading.current_thread():
+            robot_thread.join(timeout=2.0)
 
 
-def shutdown(robot, bridge):
-    """Graceful shutdown of all systems."""
-    logger.info("⚙️ 正在关闭系统...")
-
-    if bridge:
-        bridge.stop()
-        logger.info("✅ 情绪桥接器已停止")
-
-    if robot:
-        robot.shutdown()
-        logger.info("✅ 机器人核心已停止")
-
-    logger.info("👋 系统已关闭")
+def shutdown(robot, bridge, server=None, web_thread=None):
+    if server is not None:
+        server.should_exit = True
+    for name, resource in (("bridge", bridge), ("robot", robot)):
+        if resource is not None:
+            try:
+                resource.stop() if name == "bridge" else resource.shutdown()
+            except Exception as exc:
+                logger.warning("shutdown_failed module=%s type=%s", name, type(exc).__name__)
+    if web_thread and web_thread is not threading.current_thread():
+        web_thread.join(timeout=3.0)
+        if web_thread.is_alive():
+            logger.warning("web_shutdown_timeout")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="💠 SoulCompanion AI - 多模态情绪智能系统启动器"
-    )
-    parser.add_argument(
-        "--port", type=int, default=8000,
-        help="Web仪表板端口 (默认: 8000)"
-    )
-    parser.add_argument(
-        "--host", default="127.0.0.1",
-        help="Web仪表板绑定地址 (默认: 127.0.0.1)"
-    )
-    parser.add_argument(
-        "--no-robot", action="store_true",
-        help="不启动机器人核心（仅仪表板）"
-    )
-    parser.add_argument(
-        "--no-web", action="store_true",
-        help="不启动Web仪表板（仅机器人+桥接器）"
-    )
-    parser.add_argument(
-        "--hardware", action="store_true",
-        help="启用硬件模式"
-    )
-
+    parser = argparse.ArgumentParser(description="SoulCompanion local runtime")
+    try:
+        import config
+    except ValueError as exc:
+        parser.error(str(exc))
+    parser.add_argument("--port", type=int, default=config.DASHBOARD_PORT)
+    parser.add_argument("--host", default=config.DASHBOARD_HOST)
+    parser.add_argument("--no-robot", action="store_true", help="Read existing history without collecting observations")
+    parser.add_argument("--no-web", action="store_true")
+    parser.add_argument("--hardware", action="store_true", help="Request physical hardware (requires a real adapter)")
     args = parser.parse_args()
-
-    launch(
-        port=args.port,
-        host=args.host,
-        enable_robot=not args.no_robot,
-        enable_web=not args.no_web,
-        hardware=args.hardware,
-    )
+    try:
+        if not args.no_web:
+            config.validate_bind_host(args.host)
+            if not 1 <= args.port <= 65535:
+                raise config.ConfigurationError("Dashboard port must be between 1 and 65535")
+    except ValueError as exc:
+        parser.error(str(exc))
+    launch(port=args.port, host=args.host, enable_robot=not args.no_robot, enable_web=not args.no_web, hardware=args.hardware)
 
 
 if __name__ == "__main__":

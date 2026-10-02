@@ -1,6 +1,6 @@
 import time
 import logging
-import requests
+import threading
 from typing import Dict, List
 from dataclasses import dataclass, field
 
@@ -11,6 +11,7 @@ from utils.audio_player import AudioPlayer
 
 # 统一配置（R11：删除本文件内重复定义的 Config，改为单一来源）
 from config import Config, LOG_LEVEL
+from core.llm import DecisionWorker, OllamaClient
 
 
 @dataclass
@@ -37,11 +38,19 @@ class SoulCompanionRobot:
         self.logger = logging.getLogger("XiaoYu_ASD")
         self.config = Config()
         self.state = RobotState()
+        self._stop_event = threading.Event()
+        self._state_lock = threading.RLock()
+        self.vision = self.speech = self.speaker = self.brain = None
 
         # 初始化传感器引擎
-        self.vision = VisionEngine()
-        self.speech = SpeechEngine()
-        self.speaker = AudioPlayer()
+        try:
+            self.vision = VisionEngine()
+            self.speech = SpeechEngine()
+            self.speaker = AudioPlayer()
+            self.brain = DecisionWorker(OllamaClient(self.config.OLLAMA_URL, self.config.OLLAMA_MODEL, self.config.OLLAMA_TIMEOUT))
+        except Exception:
+            self.shutdown()
+            raise
 
         self.last_interaction_time = time.time()
         self.logger.info("✅ 小予 ASD 多模态干预引擎已就绪")
@@ -49,7 +58,7 @@ class SoulCompanionRobot:
     def run(self):
         """核心干预循环 [满足需求2]"""
         try:
-            while True:
+            while not self._stop_event.is_set():
                 # 1. 多模态感知融合 (视觉+听觉) [满足需求1]
                 v_data = self.vision.get_latest_state()
                 a_data = self.speech.get_latest_text()  # 包含 text, emotion, volume
@@ -58,16 +67,19 @@ class SoulCompanionRobot:
                 bio_anxiety = 0.2
 
                 # 2. 行为监测与干预触发
-                self._check_behavior_logic(v_data, a_data, bio_anxiety)
+                if v_data:
+                    self._check_behavior_logic(v_data, a_data, bio_anxiety)
 
                 # 3. 语音主动交互
-                if a_data and a_data.get("text"):
+                if a_data and a_data.get("text") and -1 <= time.time() - a_data.get("captured_at", time.time()) <= 10:
                     text = a_data["text"]
-                    self.logger.info(f"👂 听到: {text} (语气: {a_data.get('emotion')})")
+                    self.logger.debug("speech_event seq=%s", a_data.get("seq"))
                     self._handle_adaptive_interaction(text, v_data)
 
-                time.sleep(0.1)
+                self._stop_event.wait(0.1)
         except KeyboardInterrupt:
+            self._stop_event.set()
+        finally:
             self.shutdown()
 
     def _check_behavior_logic(self, v_data, a_data, bio_anxiety):
@@ -102,7 +114,8 @@ class SoulCompanionRobot:
             self.state.performance_score += 1.0
 
         # 同步用户话语到 UI 历史
-        self.state.push_history("user", text, self.config.MAX_CHAT_HISTORY)
+        with self._state_lock:
+            self.state.push_history("user", text, self.config.MAX_CHAT_HISTORY)
 
         # 调用大脑决策
         self._trigger_brain(text, v_data, "SOCIAL_PRACTICE")
@@ -120,28 +133,37 @@ class SoulCompanionRobot:
             f"要求：使用5岁孩子能听懂的语言，语气极其温和，字数控制在20字内。建议给予正向强化。"
         )
 
-        try:
-            payload = {"model": self.config.OLLAMA_MODEL, "prompt": prompt, "stream": False}
-            # 超时可配置，缓解日志中的 Read Timeout 问题
-            res = requests.post(self.config.OLLAMA_URL, json=payload, timeout=self.config.OLLAMA_TIMEOUT)
+        if self.brain.submit(prompt, self._on_reply):
+            self.last_interaction_time = time.time()
 
-            if res.status_code == 200:
-                reply = res.json().get("response", "").strip()
-                self.logger.info(f"🧠 [决策] {reply}")
+    def _on_reply(self, reply):
+        if self._stop_event.is_set():
+            return
+        with self._state_lock:
+            self.state.push_history("assistant", reply, self.config.MAX_CHAT_HISTORY)
+        self.speaker.speak(reply)
+        self.last_interaction_time = time.time()
 
-                # 同步回复到 UI 历史记录
-                self.state.push_history("assistant", reply, self.config.MAX_CHAT_HISTORY)
-
-                # 播报
-                self.speaker.speak(reply)
-                self.last_interaction_time = time.time()
-        except Exception as e:
-            self.logger.error(f"决策引擎异常 (请检查Ollama是否启动): {e}")
+    def get_status(self):
+        from datetime import datetime
+        components = {}
+        for engine in (self.vision, self.speech):
+            if engine is not None:
+                components.update(engine.get_status()["components"])
+        requested = getattr(self, "hardware_requested", False)
+        components["hardware"] = {"status": "unavailable" if requested else "disabled", "reason": "Only a simulated actuator is supplied; physical hardware is unsupported", "checked_at": datetime.now().isoformat()}
+        return {"components": components}
 
     def shutdown(self):
         self.logger.info("⚙️ 正在释放资源...")
-        self.vision.stop()
-        self.speech.stop()
+        self._stop_event.set()
+        for name in ("brain", "vision", "speech", "speaker"):
+            resource = getattr(self, name, None)
+            if resource is not None:
+                try:
+                    resource.stop()
+                except Exception as exc:
+                    self.logger.warning("resource_stop_failed module=%s type=%s", name, type(exc).__name__)
 
 
 if __name__ == "__main__":

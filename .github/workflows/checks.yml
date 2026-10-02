@@ -1,12 +1,13 @@
-name: Software checks
+name: Product software checks
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
-  test:
+  backend-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      PYTHONUTF8: '1'
       SDL_VIDEODRIVER: dummy
       SDL_AUDIODRIVER: dummy
     steps:
@@ -15,4 +16,70 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-web.txt -r requirements-dev.txt
-      - run: python -m pytest
+      - run: mkdir -p .test-artifacts
+      - run: python -m pytest -q -p no:cacheprovider --basetemp .test-artifacts/pytest
+      - run: python scripts/acceptance_smoke.py
+      - run: python scripts/hardware_smoke_test.py
+  frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/build_site.py --out .test-artifacts/site
+      - uses: actions/upload-artifact@v4
+        with:
+          name: explicit-demo-site
+          path: .test-artifacts/site
+  frontend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install -r requirements-web.txt
+      - run: npm ci --ignore-scripts
+      - run: npm test && npm run test:demo
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-acceptance
+          path: .test-artifacts/browser-acceptance
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install ruff==0.16.10
+      - run: python -m ruff check config.py launch.py main.py core emotion modules hardware reports utils web scripts tests
+      - run: python -m compileall -q config.py launch.py main.py core emotion modules hardware reports utils web scripts tests
+      - run: npm run lint
+  dependency-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install pip-audit==2.10.1
+      - run: python -m pip_audit --disable-pip --no-deps -r constraints-web.txt
+      - run: npm audit --audit-level=high

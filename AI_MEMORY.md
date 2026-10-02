@@ -1,5 +1,18 @@
 # AI TechLead Memory
 
+## Current delivery scope (2026-10-02)
+
+Single-user, single-child local-only product. The authoritative current setup is
+readme.md / DEPLOY.md; audit and acceptance are in docs/PRODUCT_AUDIT.md and
+docs/PRODUCT_DELIVERY_REPORT.md. Python 3.12, FastAPI product v1 routes, explicit
+REAL/DEMO/OFFLINE/ERROR frontend, 1 Hz snapshot, manual database maintenance.
+web_ui.py is a retired landing page; it does not create a robot or UI threads.
+OLLAMA_MODEL defaults to gemma3n:e4b. Physical devices/model inference, Docker and
+remote GitHub Actions require separate execution; software mocks are not hardware proof.
+
+All notes below are historical R11/R12 records, including obsolete test counts,
+deployment options, file statuses and old model tags. Do not use them as current commands.
+
 ## System Baseline (2026-09-13, R11)
 
 **Project**: SoulCompanion_AI - ASD儿童智能陪伴干预机器人

@@ -1,9 +1,6 @@
-# SoulCompanion AI - Web 仪表板依赖（轻量，无需摄像头 / 麦克风）
-# 安装：pip install -r requirements-web.txt
-#
-# launch.py / web/app.py 依赖本文件；只跑看板时可以只装这些。
-
-fastapi
-uvicorn[standard]
-jinja2
-python-multipart
+# Lightweight local web runtime; no model or hardware downloads.
+-c constraints-web.txt
+fastapi==0.142.2
+uvicorn==0.54.0
+jinja2==3.1.6
+pydantic==2.13.5

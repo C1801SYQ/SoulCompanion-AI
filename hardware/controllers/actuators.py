@@ -1,6 +1,20 @@
+"""Explicit simulated actuator; it never claims to control physical hardware."""
+import logging
+
+logger = logging.getLogger("SimulatedActuator")
+
+
 class RobotActuator:
+    is_real = False
+
     def __init__(self):
         self.current_angle = 0
+
+    def probe(self):
+        return False
+
+    def stop(self):
+        logger.debug("simulated_actuator_stop")
 
     def perform_action(self, action_name):
         """
@@ -9,13 +23,13 @@ class RobotActuator:
         # 功能 5：拟人类反应
         if action_name == "歪头15度":
             self.current_angle = 15
-            print(f"🎬 [执行动作]：伺服电机旋转 15°，机器人正在思考...")
+            logger.debug("simulated_head_tilt angle=15")
 
         elif action_name == "动耳朵":
-            print(f"🎬 [执行动作]：微型舵机快速摆动，机器人感到害羞/新奇。")
+            logger.debug("simulated_ear_wiggle")
 
         elif action_name == "心跳模拟":
-            print(f"🎬 [执行动作]：震动马达开启 75bpm 节律，提供生理安抚。")
+            logger.debug("simulated_heartbeat")
 
     def set_led(self, color):
-        print(f"💡 [灯光反馈]：RGB灯带切换至 {color}")
+        logger.debug("simulated_led color=%s", color)
