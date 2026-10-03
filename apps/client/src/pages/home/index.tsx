@@ -42,7 +42,7 @@ function HomePage() {
         <ResourceNotice {...history} />
         {history.status === 'ready' && history.data && <HistoryList records={history.data.records} compact />}
       </SectionCard>
-      <View className="sc-companion-note"><Text className="sc-eyebrow">陪伴的节奏</Text><Text className="sc-note-title">先听见，再回应。</Text><Text className="sc-note-description">一次短暂的停留，一句轻轻的回应。陪伴可以从很小的事情开始。</Text><View className="sc-note-divider" /><Text className="sc-body-muted">客户端媒体能力将在后续阶段接入。当前客户端不会录音、录像，也没有后台采集。</Text></View>
+      <View className="sc-companion-note"><Text className="sc-eyebrow">陪伴的节奏</Text><Text className="sc-note-title">先听见，再回应。</Text><Text className="sc-note-description">一次短暂的停留，一句轻轻的回应。陪伴可以从很小的事情开始。</Text><View className="sc-note-divider" /><Text className="sc-body-muted">摄像头和麦克风只在陪伴页主动开启后工作。当前音视频仅在本地临时处理，不上传、不长期保存。DEMO 数据也可以体验本地设备预览。</Text></View>
     </View>
   </AppShell>;
 }

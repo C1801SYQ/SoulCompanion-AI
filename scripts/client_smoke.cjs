@@ -1,4 +1,4 @@
-/** Phase02 H5 acceptance: actual local V1 API, synthetic SQLite, no media capture. */
+/** Phase02 regression plus Phase03 Session UI: actual V1, synthetic SQLite, zero automatic device acquisition. */
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -60,7 +60,8 @@ async function previewWorker() {
   const stopFile = arg('--stop-file');
   assert.ok(Number.isInteger(port) && port > 0 && port < 65536);
   assert.ok(Number.isInteger(upstreamPort) && upstreamPort > 0 && upstreamPort < 65536);
-  assert.ok(stopFile && path.resolve(stopFile).startsWith(OUTPUT + path.sep));
+  const fixtureRoots = [OUTPUT, path.join(ROOT, '.test-artifacts', 'v2-media-acceptance')];
+  assert.ok(stopFile && fixtureRoots.some(root => path.resolve(stopFile).startsWith(root + path.sep)));
   const realDist = fs.realpathSync(DIST);
   const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff' };
   const server = http.createServer((request, response) => {
@@ -120,7 +121,8 @@ async function acceptance() {
   const evidence = { status: 'running', build_mode: DEMO_ONLY ? 'demo-only' : 'real-capable', started_at: new Date().toISOString(),
     fixture: 'Actual FastAPI/V1 and isolated synthetic 65-record SQLite; no hardware or media inference',
     run_directory: run, checks: [], screenshots: [], responsive: [], cleanup: [], api_requests: [], limitations: [
-      'Phase02 H5 UI only; camera/microphone capture, cloud authentication, WeChat and Android are later stages',
+      'This regression runner never starts device capture; actual Chromium virtual-device capture is checked by media_smoke.cjs',
+      'No physical Windows/mobile/WeChat/Android device or cloud authentication is validated here',
       'Basic DOM/keyboard/motion checks do not establish full WCAG or screen-reader conformance',
     ] };
   const resultsPath = path.join(OUTPUT, 'results.json');
@@ -221,11 +223,11 @@ async function acceptance() {
 
   async function checkLayouts(page) {
     for (const width of [375, 390, 430, 768, 1024, 1440]) {
-      await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
+      await page.setViewportSize({ width, height: width === 375 ? 812 : width === 430 ? 932 : width < 600 ? 844 : 900 });
       for (const name of ['home', 'session', 'insights', 'reports', 'settings']) {
         if (name !== 'home' || !page.url().includes('/home')) await navigate(page, name);
         if (DEMO_ONLY) await expect(element(page, 'demo-badge')).toBeVisible();
-        else await expect(element(page, 'connection-status')).toContainText(/已连接|online/i, { timeout: 15000 });
+        else if (name !== 'session') await expect(element(page, 'connection-status')).toContainText(/已连接|online/i, { timeout: 15000 });
         await pause(100);
         const layout = await page.evaluate(() => ({
           viewport: innerWidth, documentWidth: document.documentElement.scrollWidth,
@@ -236,6 +238,32 @@ async function acceptance() {
         assert.ok(layout.documentWidth <= width + 1, `${name} document overflows at ${width}px`);
         layout.areas.forEach(area => assert.ok(area.contentWidth <= area.clientWidth + 1, `${name} ${area.className} overflows at ${width}px`));
         evidence.responsive.push({ page: name, width, ...layout });
+        if (name === 'session') {
+          await expect(element(page, 'camera-status')).toContainText('Camera OFF');
+          await expect(element(page, 'microphone-status')).toContainText('Mic OFF');
+          await expect(element(page, 'session-emotion-status')).toContainText('本次尚无情绪推理结果');
+          await expect(page.locator('.sc-local-session-controls')).toContainText('LOCAL DEVICE ONLY');
+          await expect(page.locator('.sc-local-session-controls')).toContainText('NO MEDIA UPLOAD');
+          await expect(page.locator('.sc-session-notice')).toContainText('尚未连接情绪分析后端');
+          await expect(element(page, 'session-start')).toBeEnabled();
+          await expect(element(page, 'session-stop')).toBeDisabled();
+          const controls = [];
+          for (const id of ['session-start', 'session-stop', 'camera-enabled', 'microphone-enabled', 'camera-facing-user', 'camera-facing-environment', 'camera-list-refresh']) {
+            const control = element(page, id);
+            await expect(control).toHaveAttribute('role', id.endsWith('-enabled') ? 'switch' : 'button');
+            const box = await control.boundingBox();
+            assert.ok(box && box.width >= 43.5 && box.height >= 43.5, `${id} target below 44px at ${width}px`);
+            if (width < 600 && ['session-start', 'session-stop'].includes(id)) {
+              const navigation = await element(page, 'nav-home').boundingBox();
+              assert.ok(box.y >= 0 && box.y + box.height <= navigation.y, `${id} must fit first screen above mobile navigation at ${width}px`);
+            }
+            controls.push({ id, ...box });
+          }
+          const mediaAreas = await page.locator('.sc-preview-card,.sc-local-session-controls,.sc-media-options,.sc-media-facing-buttons,.sc-media-actions').evaluateAll(nodes => nodes.map(node => ({ className: node.className, width: node.clientWidth, content: node.scrollWidth })));
+          mediaAreas.forEach(area => assert.ok(area.content <= area.width + 1, `Session ${area.className} overflows at ${width}px`));
+          evidence.session_controls ||= [];
+          evidence.session_controls.push({ width, controls, areas: mediaAreas });
+        }
         if ((width === 1440 && ['session', 'reports', 'settings'].includes(name))
           || (width === 390 && ['session', 'insights'].includes(name))) await screenshot(page, `${name}-${width}`, true);
       }
@@ -356,7 +384,7 @@ async function acceptance() {
       if (media) Object.defineProperty(media, 'getUserMedia', { configurable: true, value: async () => {
         window.__scMediaRequests += 1;
         await window.__scCaptureAttempt();
-        throw new Error('Phase02 must not request media devices');
+        throw new Error('Navigation-only regression must not automatically request media devices');
       } });
     });
     const page = await context.newPage();

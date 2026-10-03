@@ -161,3 +161,65 @@ button, taro-button-core { cursor: pointer; }
   .sc-hero { min-height: 564px; }
 }
 @media (prefers-reduced-motion: reduce) { .sc-orb--breathing { animation: none !important; } }
+
+// Session media controls stay readable before permission, while waiting and after stop.
+.sc-device-session-header .sc-page-header { margin-bottom: 20px; }
+.sc-local-session-controls { margin-bottom: 22px; padding: 22px 25px; border: 1px solid var(--sc-boundary); border-radius: var(--sc-radius-surface); background: #f4f7ef; }
+.sc-local-session-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.sc-local-session-controls .sc-device-strip { padding: 16px 0 0; flex-wrap: wrap; }
+.sc-local-session-controls .sc-media-actions { margin-top: 18px; }
+.sc-local-session-privacy { display: block; color: var(--sc-muted); font-size: 12px; margin-top: 14px; }
+.sc-input-level { padding: 0 22px 22px; color: var(--sc-muted); font-size: 13px; }
+.sc-input-level-track { height: 5px; margin-top: 12px; overflow: hidden; border-radius: 4px; background: #dce4d7; }
+.sc-input-level-fill { height: 100%; width: 100%; transform-origin: left; background: var(--sc-primary); }
+.sc-input-level-note { display: block; margin-top: 9px; font-size: 12px; }
+.sc-camera-list { margin-top: 20px; }
+.sc-camera-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sc-camera-list-heading .sc-media-facing-label { margin: 0; }
+.sc-camera-list-options { display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; margin-top: 12px; }
+.sc-camera-device { width: 100%; flex-shrink: 0; min-height: 44px; margin: 0; padding: 10px 13px; border: 1px solid var(--sc-boundary); border-radius: 9px; background: var(--sc-surface); color: var(--sc-muted); line-height: 1.7; font-size: 13px; text-align: left; overflow-wrap: anywhere; }
+.sc-camera-device--selected { border-color: #739880; background: var(--sc-mist-light); color: var(--sc-primary); }
+.sc-camera-device[disabled] { color: var(--sc-muted); }
+.sc-media-options { display: flex; flex-direction: column; gap: 13px; }
+.sc-media-option { width: 100%; margin: 0; min-height: 64px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; text-align: left; background: var(--sc-surface); border: 1px solid var(--sc-boundary); border-radius: 12px; color: var(--sc-ink); line-height: 1.7; }
+.sc-media-option--selected { border-color: #739880; background: #f1f6ee; }
+.sc-media-option-title { display: block; font-size: 16px; font-weight: 500; }
+.sc-media-option-note { display: block; margin-top: 3px; color: var(--sc-muted); font-size: 12px; }
+.sc-media-option-choice { flex: 0 0 auto; width: 23px; height: 23px; border: 1px solid #91a492; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.sc-media-option--selected .sc-media-option-choice { border-color: var(--sc-primary); background: var(--sc-primary); color: #fff; }
+.sc-media-option-check { font-size: 12px; line-height: 1; }
+.sc-media-facing { margin: 22px 0; }
+.sc-media-facing-label { display: block; margin-bottom: 10px; font-size: 14px; font-weight: 500; }
+.sc-media-facing-buttons { display: flex; gap: 8px; }
+.sc-media-facing-button { flex: 1; width: auto; min-height: 44px; margin: 0; padding: 0 10px; border: 1px solid var(--sc-boundary); border-radius: 10px; background: var(--sc-surface); color: var(--sc-muted); font-size: 13px; line-height: 42px; }
+.sc-media-facing-button--selected { border-color: #739880; background: var(--sc-mist-light); color: var(--sc-primary); }
+.sc-media-facing-button[disabled], .sc-media-option[disabled] { color: var(--sc-muted); }
+.sc-media-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 23px; }
+.sc-media-stop { min-height: 48px; width: auto; margin: 0; padding: 0 18px; border: 1px solid #c6aa97; border-radius: var(--sc-radius-control); background: #fffaf5; color: #74482f; font-size: 14px; line-height: 46px; }
+.sc-media-stop[disabled] { color: var(--sc-muted); }
+.sc-media-guidance { display: block; color: var(--sc-muted); font-size: 13px; line-height: 1.9; margin-top: 17px; }
+.sc-media-permissions { margin-top: 23px; padding-top: 18px; border-top: 1px solid var(--sc-boundary); }
+.sc-media-permission-row { display: flex; justify-content: space-between; gap: 14px; margin-top: 10px; color: var(--sc-muted); font-size: 13px; }
+.sc-media-permission-row > :last-child { text-align: right; color: var(--sc-ink); }
+.sc-media-error { margin-top: 20px; padding: 15px 17px; border-radius: 10px; background: var(--sc-alert-light); color: var(--sc-alert); font-size: 14px; line-height: 1.9; }
+.sc-media-statistics { display: flex; justify-content: space-between; gap: 18px; padding: 0 22px 20px; color: var(--sc-muted); font-size: 12px; }
+.sc-media-statistics > * { min-width: 0; }
+.sc-media-unprocessed { padding: 20px; border: 1px solid var(--sc-boundary); border-radius: 14px; background: #f7f8f3; }
+.sc-media-unprocessed .sc-body-muted { margin-top: 8px; }
+@media (max-width: 599px) {
+  .sc-device-session-header .sc-page-header { margin-bottom: 17px; gap: 12px; }
+  .sc-device-session-header .sc-page-title { font-size: 23px; margin-bottom: 9px; }
+  .sc-device-session-header .sc-page-description { font-size: 14px; }
+  .sc-local-session-controls { padding: 17px; margin-bottom: 18px; }
+  .sc-local-session-controls .sc-device-strip { gap: 8px; }
+  .sc-local-session-controls .sc-media-actions { gap: 10px; margin-top: 15px; }
+  .sc-local-session-controls .sc-media-actions > * { flex: 1; margin: 0; min-width: 0; }
+  .sc-local-session-controls .sc-primary-action.taroify-button { padding: 0 14px; }
+  .sc-local-session-privacy { font-size: 11px; }
+  .sc-input-level { padding-left: 18px; padding-right: 18px; }
+  .sc-media-option { padding: 14px; }
+  .sc-media-facing-label { font-size: 13px; }
+  .sc-media-actions { gap: 10px; }
+  .sc-media-guidance { font-size: 13px; }
+  .sc-media-statistics { padding-left: 18px; padding-right: 18px; font-size: 11px; }
+}

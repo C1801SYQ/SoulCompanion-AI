@@ -2,7 +2,7 @@
 
 更新：2026-10-03。
 
-SoulCompanion V2 正在按编号分支开发 Web、手机 Web、微信小程序与 Android 客户端，摄像头和麦克风将由正在使用的设备提供。已保留的本地产品在 `01-product-baseline`；当前 `02-cross-platform-ui` 提供 Taro 五页界面与设计系统。运行步骤见 [V2 客户端](apps/client/README.md)，设计与现网审计见 [docs/v2](docs/v2)。后续阶段分别接入设备采集、认证后端和跨平台发布。
+SoulCompanion V2 正在按编号分支开发 Web、手机 Web、微信小程序与 Android 客户端。已保留的本地产品在 `01-product-baseline`；`02-cross-platform-ui` 提供 Taro 五页界面与设计系统，`03-device-media-capture` 增加用户主动开启的本地摄像头预览、麦克风采样及资源释放。DEMO_ONLY Preview 也允许主动测试本地设备，当前音视频不上传，尚未接入情绪分析后端。运行步骤见 [V2 客户端](apps/client/README.md)，本阶段验证与平台限制见 [Phase 03](docs/v2/03-device-media-capture.md) 和 [媒体隐私](docs/v2/MEDIA_PRIVACY.md)。
 
 面向 ASD 儿童情绪陪伴场景的本地多模态软件。交付范围是**单台电脑、单名本地管理员、单儿童档案**：实时看板、历史记录、家长报告、组件状态、隐私设置和数据维护。核心情绪融合与行为规则保留原有实现。
 

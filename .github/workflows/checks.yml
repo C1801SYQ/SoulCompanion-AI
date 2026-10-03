@@ -103,6 +103,7 @@ jobs:
       - run: npm run client:typecheck && npm run client:test && npm run client:build:h5
       - run: npx playwright install --with-deps chromium
       - run: npm run client:test:e2e
+      - run: npm run client:test:media
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -110,5 +111,35 @@ jobs:
           path: |
             apps/client/dist
             .test-artifacts/v2-client-acceptance
+            .test-artifacts/v2-media-acceptance
             .test-artifacts/client-dependency-audit.json
             .test-artifacts/client-dependency-policy.json
+  client-h5-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+      PUBLIC_DEMO_ONLY: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install -r requirements-web.txt
+      - run: npm ci --ignore-scripts
+      - run: npm --prefix apps/client ci --ignore-scripts
+      - run: npm run client:build:h5
+      - run: npx playwright install --with-deps chromium
+      - run: npm run client:test:e2e -- --demo-only
+      - run: npm run client:test:media -- --demo-only
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-device-demo-preview-evidence
+          path: |
+            apps/client/dist
+            .test-artifacts/v2-client-acceptance
+            .test-artifacts/v2-media-acceptance
