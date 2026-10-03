@@ -612,11 +612,38 @@ async function acceptance() {
     await expect(element(page, 'demo-badge')).toBeHidden();
     await screenshot(page, 'offline');
     backend = await start(PYTHON, ['scripts/acceptance_server.py', '--port', String(backendPort), '--db', database], backendPort, '/healthz', 'backend-restarted');
-    await element(page, 'retry-connection').click();
+    let recoveryMode;
+    await expect.poll(async () => {
+      // Check and click in one browser task so automatic recovery cannot remove the button between them.
+      recoveryMode = await page.evaluate(() => {
+        const visible = node => {
+          const box = node.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.visibility !== 'collapse';
+        };
+        const find = id => [...document.querySelectorAll(`[data-testid="${id}"], #${id}`)].find(visible);
+        const status = find('connection-status')?.textContent || '';
+        if (/已连接|online/i.test(status)) return 'auto';
+        const retry = find('retry-connection');
+        if (/OFFLINE|离线|未连接|断开/i.test(status) && retry && !retry.hasAttribute('disabled') && retry.getAttribute('aria-disabled') !== 'true') {
+          retry.click();
+          return 'manual';
+        }
+        return null;
+      });
+      return recoveryMode === 'auto' || recoveryMode === 'manual';
+    }, { timeout: 20000, message: 'Backend restart must allow automatic recovery or an available manual retry' }).toBe(true);
+    evidence.recovery_mode = recoveryMode;
     await expect(element(page, 'connection-status')).toContainText(/已连接|online/i, { timeout: 20000 });
-    await historyResponse(page, () => navigate(page, 'insights'), 7);
+    await expect(element(page, 'demo-badge')).toBeHidden();
+    const recoveredHistory = await historyResponse(page, () => navigate(page, 'insights'), 7);
     await expect(element(page, 'history-summary')).toContainText('65');
-    passed('Backend graceful stop is verified by TCP refusal; OFFLINE recovers REAL and persisted 65-record history after restart');
+    await expect(element(page, 'connection-status')).toContainText(/已连接|online/i, { timeout: 20000 });
+    await expect(element(page, 'demo-badge')).toBeHidden();
+    passed('Backend graceful stop is verified by TCP refusal; OFFLINE recovers REAL and persisted 65-record history after restart', {
+      recovery_mode: recoveryMode,
+      history_persisted: recoveredHistory.total,
+    });
 
     expectedRenderFailure = true;
     try {
