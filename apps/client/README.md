@@ -40,6 +40,10 @@ requests. Failed REAL requests remain errors or offline states.
 - `PUBLIC_DEMO_ONLY=true`: build explicitly synthetic emotion data with REAL disabled.
   Local camera/microphone preview still works after an explicit Start action.
   This flag does not turn a local device into a fake device or an inference source.
+- Phase03 builds on Cloudflare Pages (`CF_PAGES=1`) always use synthetic emotion data,
+  even if a dashboard environment variable is missing or set to false. Local builds
+  without this Pages marker still support REAL. The Preview CI job exercises this
+  rule with `CF_PAGES=1` and `PUBLIC_DEMO_ONLY=false`; device Start remains available.
 
 Do not put passwords, tokens, signing keys, real records or media in these values
 or the repository. Preferences and client observations stay in memory. An

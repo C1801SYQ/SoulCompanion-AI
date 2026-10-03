@@ -1,6 +1,8 @@
 import { defineConfig } from '@tarojs/cli';
 
 // Only public client configuration belongs here. No credentials enter the bundle.
+// Phase03 Pages deployments have no emotion backend; keep public builds explicitly synthetic.
+const publicDemoOnly = process.env.PUBLIC_DEMO_ONLY === 'true' || process.env.CF_PAGES === '1';
 export default defineConfig<'vite'>({
   projectName: 'soulcompanion-client',
   date: '2026-10-03',
@@ -14,7 +16,7 @@ export default defineConfig<'vite'>({
   cache: { enable: false },
   defineConstants: {
     PUBLIC_API_URL: JSON.stringify(process.env.PUBLIC_API_URL || ''),
-    PUBLIC_DEMO_ONLY: JSON.stringify(process.env.PUBLIC_DEMO_ONLY === 'true'),
+    PUBLIC_DEMO_ONLY: JSON.stringify(publicDemoOnly),
   },
   mini: {
     minifyXML: { collapseWhitespace: false },

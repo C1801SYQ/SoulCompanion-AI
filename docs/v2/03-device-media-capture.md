@@ -1,6 +1,6 @@
 # Phase 03 — Device media capture
 
-Client date: 2026-10-03 (Asia/Shanghai). Branch: `03-device-media-capture`.
+Implementation validated: 2026-10-03; delivery follow-up: 2026-10-04 (Asia/Shanghai). Branch: `03-device-media-capture`.
 Parent: `a34f02d03da1ddbda0440584065056fd1f327567` on `02-cross-platform-ui`.
 
 ## PHASE03_EXISTING_WORK_AUDIT
@@ -30,7 +30,7 @@ All existing source and UI work is extended in place. Per the latest request, th
 
 The exact Phase02 commit passed all six remote Linux jobs: backend tests, lint, H5 client, legacy frontend tests, legacy frontend build, and dependency checks. The H5 job ran 61 unit tests and 14 actual browser checks and uploaded build/evidence artifact `11265524385` (2,502,609 bytes). [Run 37100236654](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37100236654), [H5 job](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37100236654/job/111138170645).
 
-The same exact commit also has a completed/success Cloudflare Workers and Pages check, independently read through GitHub's check-runs API: check `111147283657`, deployment `e027e65c-6fd3-46f8-aa43-c9388ba668a4`. [Phase02 Pages check](https://github.com/C1801SYQ/SoulCompanion-AI/runs/111147283657). This confirms the parent's cloud result, not Phase03's pending result.
+The same exact commit also has a completed/success Cloudflare Workers and Pages check, independently read through GitHub's check-runs API: check `111147283657`, deployment `e027e65c-6fd3-46f8-aa43-c9388ba668a4`. [Phase02 Pages check](https://github.com/C1801SYQ/SoulCompanion-AI/runs/111147283657). This confirms only the parent's cloud result; Phase03 has separate evidence below.
 
 The reviewed client dependency policy still accepts 36 known findings; successful policy validation does not mean a clean security audit. Phase03 does not introduce dependencies or revise those exceptions.
 
@@ -77,7 +77,7 @@ The preview uses a real HTML video element exclusively inside the H5 platform co
 
 ## Permissions, lifecycle and privacy
 
-Opening pages, mounting previews and listing cameras before a grant do not request media permissions. Only explicit Start requests the selected devices. Camera/mic can be used separately. The first-screen Start/End controls have text and keyboard roles; device states use readable ON/OFF/REQUESTING/DENIED/UNAVAILABLE/ERROR labels. Failure messages distinguish permission refusal, missing devices, a possibly occupied device, unsupported browser and an insecure context without exposing raw device error text. Permissions recover through the browser's site settings and an explicit retry, never an automatic prompt loop.
+Opening pages, mounting idle preview placeholders and listing cameras before a grant do not request media permissions. Only explicit Start requests the selected devices. Camera/mic can be used separately. The first-screen Start/End controls have text and keyboard roles; device states use readable ON/OFF/REQUESTING/DENIED/UNAVAILABLE/ERROR labels. Failure messages distinguish permission refusal, missing devices, a possibly occupied device, unsupported browser and an insecure context without exposing raw device error text. Permissions recover through the browser's site settings and an explicit retry, never an automatic prompt loop.
 
 Stop revokes pending intent synchronously, then ends owned tracks, detaches `video.srcObject`, stops sampling, clears callbacks and PCM, disconnects nodes, closes worklet ports and audio contexts, and removes per-device listeners. Controller and adapters retain references to resources whose cleanup failed, so the next End attempts actual release. Late grants and callbacks from old epochs cannot publish new samples or activate the UI. Repeated Start/Stop, failure observers and synchronous subscriber reentry have regression coverage.
 
@@ -134,15 +134,23 @@ Browser checks include zero initial permission requests, repeat sessions, cancel
 
 Local REAL-capable evidence: `.test-artifacts/v2-client-acceptance/run-vb7fd3/results.json` and `.test-artifacts/v2-media-acceptance/run-9mbx01/results.json`. The native media run decoded a 640×480 preview, verified an 8394-byte JPEG by its actual header, and measured 32000 PCM bytes / 16000 samples at 16000 Hz with nonzero RMS 0.0687755765. Stopped tracks were `ended`, audio contexts `closed`, videos detached and counters no longer advanced. Storage evidence recorded one deleted pre-permission framework probe, zero unknown writes and zero capture writes. These values describe one virtual-device test run, not physical hardware or emotional analysis.
 
-Local DEMO_ONLY evidence: `.test-artifacts/v2-client-acceptance/run-OxP3Qt/results.json` and `.test-artifacts/v2-media-acceptance/run-mNFf4S/results.json`. The five-page runner does not click device Start and therefore records zero media requests; the separate media runner explicitly starts actual virtual native streams and proves local capture remains available while all emotion API requests remain zero. Both media runs and all four final runner invocations recorded owned-server graceful exits and TCP refusal. The final ignored local `apps/client/dist` is the DEMO_ONLY build, matching the existing Pages Preview configuration; it is not committed.
+Local DEMO_ONLY evidence: `.test-artifacts/v2-client-acceptance/run-OxP3Qt/results.json` and `.test-artifacts/v2-media-acceptance/run-mNFf4S/results.json`. The five-page runner does not click device Start and therefore records zero media requests; the separate media runner explicitly starts actual virtual native streams and proves local capture remains available while all emotion API requests remain zero. Both media runs and all four final runner invocations recorded owned-server graceful exits and TCP refusal. Local `apps/client/dist` is ignored and is never committed.
+
+The Pages-policy follow-up was also built with `CF_PAGES=1` and `PUBLIC_DEMO_ONLY=false`: `.test-artifacts/v2-client-acceptance/run-lYyopa/results.json` passed all 3 grouped DEMO_ONLY checks and `.test-artifacts/v2-media-acceptance/run-56taz9/results.json` passed all 14 native-media checks. This proves the effective Pages rule through the rendered build, including local capture and zero emotion API traffic; the explicit flag alone is not the tested cause. TypeScript, all 166 unit tests, lint and independent code review also passed again for the follow-up.
 
 Responsive checks cover 375×812, 390×844, 430×932 and widths 768/1024/1440. All five pages and the active preview must avoid horizontal overflow. Start/End fit the mobile first screen; essential controls have at least 44 px targets, text/roles and keyboard operation. Existing reduced-motion behavior remains in place.
 
 ## Cloudflare and Git delivery
 
-Keep the owner's existing Pages project and production branch unchanged. Preview configuration remains root `apps/client`, build `npm ci --ignore-scripts && npm run build:h5`, output `dist`, `NODE_VERSION=24.18.0` and `PUBLIC_DEMO_ONLY=true`. Local DEMO_ONLY build/media acceptance is required in addition to the actual remote Pages check. No Cloudflare login/credential is invented or needed to inspect the GitHub check result.
+The owner's existing Pages project and production branch remain unchanged. Recommended Preview configuration remains root `apps/client`, build `npm ci --ignore-scripts && npm run build:h5`, output `dist`, `NODE_VERSION=24.18.0` and `PUBLIC_DEMO_ONLY=true`. No Cloudflare account settings or credentials were changed.
 
-Phase03 implementation SHA, exact remote branch verification, GitHub Actions and Pages result: **pending the tested Phase03 commit and push**. Do not treat the parent's passed cloud check as this branch's result.
+The original media implementation commit is `f18782094515485deb4912c284d7b77e6c6662f9`, with the requested message `feat: add cross-platform device camera and microphone capture`. Its local and remote Phase03 SHA matched. [GitHub Actions run 37121751985](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37121751985) completed successfully with all seven jobs; its two H5 evidence artifacts are `11273294536` (REAL-capable) and `11273850960` (DEMO_ONLY). [Cloudflare check 111199386732](https://github.com/C1801SYQ/SoulCompanion-AI/runs/111199386732) also reported a successful deployment to [immutable Preview f40526a2](https://f40526a2.soulcompanion-dashboard.pages.dev).
+
+An additional actual browser read of that old Preview found HTTP 200, zero initial device requests, but REAL still selected and enabled, no DEMO badge and 11 blocked API attempts. A passed build alone did not establish the required public emotion-data mode. The project dashboard's effective Preview variable scope was not inspected, so its underlying misconfiguration is not claimed as proven.
+
+Phase03 now also compiles `PUBLIC_DEMO_ONLY=true` whenever the standard Pages build marker `CF_PAGES=1` is present, even if the public flag is absent or false. Local builds without that marker keep the existing explicit REAL/DEMO behavior. [Cloudflare documents this default system marker](https://developers.cloudflare.com/pages/configuration/build-configuration/). The Preview CI job deliberately uses `CF_PAGES=1` with `PUBLIC_DEMO_ONLY=false` and requires both DEMO_ONLY browser runners to pass. Local device Start stays available and no emotion backend is added.
+
+The follow-up build-policy commit, exact remote SHA, seven-job Actions result, new Pages deployment and actual live DEMO/zero-API browser result will be recorded after verification. The old successful deployment above is not presented as the corrected public Preview.
 
 ## PHASE 03 DELIVERY REPORT
 
@@ -151,7 +159,7 @@ Phase03 implementation SHA, exact remote branch verification, GitHub Actions and
 | 1 | Existing work found | See the initial audit above: 7 modified and 23 untracked files, no staged work, Phase02 parent |
 | 2 | Work preserved | Extended existing controller, adapters, UI and tests in place; no reset/clean/restore/regeneration/force push |
 | 3 | Architecture | Portable contract/controller, platform factory/preview, isolated Web/WeChat/Fake adapters; metadata-only UI |
-| 4 | Files changed | 37 source/test/config/document files: media modules, Session provider/controls/text, Home/Session/Settings/styles, media tests, browser runners, CI/scripts, README/privacy/delivery docs. No dependency, legacy Python hardware, model or raw-media files changed |
+| 4 | Files changed | 38 source/test/config/document files: media modules, Session provider/controls/text, Home/Session/Settings/styles, media tests, browser runners, build configuration, CI/scripts, README/privacy/delivery docs. No dependency, legacy Python hardware, model or raw-media files changed |
 | 5 | Web camera | Explicit permission, native preview, front/back and post-grant device choice, bounded no-queue frame encoding |
 | 6 | Web microphone | Explicit native audio, bounded mono WAV, genuine input RMS, no raw persistence |
 | 7 | Session UX | Local-device Start/End, separate accurate device states, no-upload/unconnected-inference explanation; DEMO_ONLY can capture |
@@ -163,9 +171,9 @@ Phase03 implementation SHA, exact remote branch verification, GitHub Actions and
 | 13 | Browser tests | REAL-capable five-page 14 + native-media 14 passed; DEMO_ONLY five-page 3 grouped + native-media 14 passed; virtual-native/injected evidence separated |
 | 14 | Responsive checks | All six widths passed, including active preview and mobile first-screen Start/End with 44 px controls |
 | 15 | Baseline regression | Python 327, DOM 38, DEMO 44 and legacy browser 8 passed; lint passed; legacy Python capture/model files unchanged |
-| 16 | Cloudflare result | Exact Phase03 Pages check pending after push; no production-branch change |
-| 17 | Commit SHA | Pending tested source commit |
-| 18 | Remote branch SHA | Pending exact SHA equality after push |
+| 16 | Cloudflare result | Original source build succeeded but actual Preview mode required correction; final corrected deployment verification pending below; no production-branch change |
+| 17 | Commit SHA | Original media implementation `f18782094515485deb4912c284d7b77e6c6662f9`; follow-up build-policy SHA pending |
+| 18 | Remote branch SHA | Original implementation SHA equality verified; final follow-up equality pending |
 | 19 | Known limitations | Physical devices untested; WeChat MP3 does not provide truthful PCM input level or guaranteed fragment duration; no media inference/upload; 36 known dependency findings remain |
 | 20 | Phase04 prerequisites | Await owner's next instruction; define backend provider/domain, authentication/isolation and separately reviewed media ingestion/privacy contract. No Phase04 branch or backend implementation created |
 

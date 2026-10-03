@@ -119,7 +119,8 @@ jobs:
     timeout-minutes: 15
     env:
       PYTHONUTF8: '1'
-      PUBLIC_DEMO_ONLY: 'true'
+      CF_PAGES: '1'
+      PUBLIC_DEMO_ONLY: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
