@@ -126,7 +126,7 @@ npm run lint
 git diff --check
 ```
 
-Install `requirements-web.txt` and `requirements-dev.txt` in the test interpreter. A selected interpreter can be passed as `SOULCOMPANION_PYTHON`. Use `--demo-only` only against a build made with `PUBLIC_DEMO_ONLY=true`. CI installs Chromium with Linux system dependencies and runs both builds in separate jobs.
+Install `requirements-web.txt` and `requirements-dev.txt` in the test interpreter. A selected interpreter can be passed as `SOULCOMPANION_PYTHON`. Use `--demo-only` only against an effective DEMO_ONLY build (`PUBLIC_DEMO_ONLY=true` or `CF_PAGES=1`). CI installs Chromium with Linux system dependencies and runs both builds in separate jobs.
 
 The media runner uses Chromium's `--use-fake-device-for-media-stream` and `--use-fake-ui-for-media-stream`: it exercises actual `getUserMedia`, live/ended native tracks, decoded preview, JPEG signatures, transferred AudioWorklet PCM and measured nonzero RMS. Permission refusal/missing devices use injected DOMExceptions; delayed permission uses a delay wrapper around actual virtual native streams; hidden/pagehide stimuli are injected lifecycle events. These distinctions stay in the result JSON. Fake adapter/SDK tests are reported separately.
 
