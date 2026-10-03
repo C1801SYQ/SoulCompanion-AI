@@ -7,7 +7,12 @@
     "test": "node scripts/test_frontend.js",
     "test:demo": "node scripts/verify_demo.js",
     "test:e2e": "node scripts/browser_smoke.js",
-    "lint": "node --check web/static/app.js && node --check web/static/demo-data.js && node --check scripts/test_frontend.js && node --check scripts/browser_smoke.js"
+    "lint": "node --check web/static/app.js && node --check web/static/demo-data.js && node --check scripts/test_frontend.js && node --check scripts/browser_smoke.js && node --check scripts/client_smoke.cjs && node --check scripts/client_audit.cjs && node --check scripts/test_client_audit.cjs",
+    "client:build:h5": "npm --prefix apps/client run build:h5",
+    "client:typecheck": "npm --prefix apps/client run typecheck",
+    "client:test": "npm --prefix apps/client test",
+    "client:audit": "node scripts/test_client_audit.cjs && node scripts/client_audit.cjs",
+    "client:test:e2e": "node scripts/client_smoke.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

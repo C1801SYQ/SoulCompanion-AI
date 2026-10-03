@@ -34,3 +34,10 @@ dist-site/
 *.sqlite-wal
 *.sqlite-shm
 data/
+
+# Cross-platform client output and local caches
+apps/client/dist/
+apps/client/.taro/
+apps/client/.swc/
+apps/client/coverage/
+apps/client/*.tsbuildinfo
