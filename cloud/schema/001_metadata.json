@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "env_id": "soulcompanion-dev-d0dzo6f2a24211",
+  "region": "ap-shanghai",
+  "owner": "SoulCompanion-AI/phase04",
+  "marker_id": "phase04",
+  "acl": "ADMINONLY",
+  "collections": [
+    {
+      "name": "sc_v2_users",
+      "purpose": "Application user; public UUID, display_name, status, created_at, updated_at",
+      "indexes": []
+    },
+    {
+      "name": "sc_v2_identities",
+      "purpose": "Private verified identity; user_id, provider, provider_subject, issuer, created_at",
+      "indexes": [
+        {
+          "name": "phase04_identity_unique",
+          "unique": true,
+          "keys": [
+            [
+              "provider",
+              "1"
+            ],
+            [
+              "provider_subject",
+              "1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_child_profiles",
+      "purpose": "Child nickname/status; owner_user_id mandatory",
+      "indexes": [
+        {
+          "name": "phase04_owner_id",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "id",
+              "1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "created_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_status_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "status",
+              "1"
+            ],
+            [
+              "created_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_sessions",
+      "purpose": "Metadata only; owner_user_id, child_profile_id, source_platform, started_at, ended_at, status",
+      "indexes": [
+        {
+          "name": "phase04_owner_id",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "id",
+              "1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "created_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_child_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "child_profile_id",
+              "1"
+            ],
+            [
+              "created_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_emotion_records",
+      "purpose": "Read-only; owner_user_id, child_profile_id, session_id, timestamp, category, confidence, valence, arousal, source",
+      "indexes": [
+        {
+          "name": "phase04_owner_id",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "id",
+              "1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "timestamp",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_child_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "child_profile_id",
+              "1"
+            ],
+            [
+              "timestamp",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_reports",
+      "purpose": "Read-only; owner_user_id, child_profile_id, range_start, range_end, summary",
+      "indexes": [
+        {
+          "name": "phase04_owner_id",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "id",
+              "1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "range_end",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "phase04_owner_child_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_user_id",
+              "1"
+            ],
+            [
+              "child_profile_id",
+              "1"
+            ],
+            [
+              "range_end",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_app_schema",
+      "purpose": "Administrative schema marker only; no client access",
+      "indexes": []
+    }
+  ]
+}
