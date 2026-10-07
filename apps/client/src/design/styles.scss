@@ -223,3 +223,8 @@ button, taro-button-core { cursor: pointer; }
   .sc-media-guidance { font-size: 13px; }
   .sc-media-statistics { padding-left: 18px; padding-right: 18px; font-size: 11px; }
 }
+/* Cloud account actions share the existing quiet, accessible settings presentation. */
+.sc-cloud-heading, .sc-cloud-profile { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.sc-cloud-form { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.sc-cloud-input { min-height: 44px; padding: 8px 12px; border: 1px solid #dddcd6; border-radius: 12px; background: #fff; color: #353831; }
+.sc-cloud-profiles { margin-top: 12px; }

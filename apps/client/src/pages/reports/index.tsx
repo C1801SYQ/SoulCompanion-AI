@@ -7,6 +7,7 @@ import { EmptyState, PrimaryAction, RangeTabs, ResourceNotice, SectionCard, Stat
 import { useResource } from '../../hooks/useResource';
 import { exportMarkdown } from '../../platform/export';
 import { useCompanion } from '../../state/AppProvider';
+import { CloudRecords } from '../../components/CloudRecords';
 
 function ReportNotes({ items, empty }: { items: string[]; empty: string }) {
   return items.length ? <View className="sc-report-notes">{items.map((item, index) => <View className="sc-report-note" key={`${index}-${item}`}><Text className="sc-report-note-number">{String(index + 1).padStart(2, '0')}</Text><Text>{item}</Text></View>)}</View> : <Text className="sc-body-muted">{empty}</Text>;
@@ -52,6 +53,7 @@ function ReportsPage() {
   return <AppShell page="reports">
     <PageHeader eyebrow="REPORTS · 报告" title="把陪伴，轻轻记下来。" description="回顾一段时间的情绪观察，给下一次陪伴一点参考。" action={<RangeTabs days={days} onChange={changeRange} />} />
     <ResourceNotice {...report} />
+    <CloudRecords kind="reports" />
     <View className="sc-report-toolbar"><StatusPill tone={source === 'demo' ? 'warm' : 'quiet'}>{source === 'demo' ? '合成示例报告' : '真实情绪记录报告'}</StatusPill><PrimaryAction id="report-export" onClick={() => void download()} disabled={report.status !== 'ready' || exporting}>{exporting ? '正在导出…' : '导出 Markdown'}</PrimaryAction></View>
     {exportStatus && <View className="sc-export-status" role="status"><Text>{exportStatus}</Text></View>}
     {report.status === 'ready' && report.data && <>

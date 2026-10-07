@@ -8,6 +8,7 @@ import { emotionLabel, timeLabel, valenceLabel } from '../../components/format';
 import { EmptyState, Metric, RangeTabs, ResourceNotice, SectionCard, type Days } from '../../components/Primitives';
 import { useResource } from '../../hooks/useResource';
 import { useCompanion } from '../../state/AppProvider';
+import { CloudRecords } from '../../components/CloudRecords';
 
 function InsightsPage() {
   const { api, source } = useCompanion();
@@ -25,6 +26,7 @@ function InsightsPage() {
   return <AppShell page="insights">
     <PageHeader eyebrow="INSIGHTS · 洞察" title="慢慢看见，情绪的变化。" description="从一些小片刻中回望，让感受有迹可循。" action={<RangeTabs days={days} onChange={changeRange} />} />
     <ResourceNotice {...analytics} />
+    <CloudRecords kind="emotions" />
     <View className="sc-metrics-panel"><Metric label="情绪记录" value={analytics.status === 'ready' && analytics.data ? String(analytics.data.total_records) : '—'} detail={`最近 ${days} 天的观察条数`} /><Metric label="平均效价" value={meaningful && analytics.data ? valenceLabel(analytics.data.trend.average_valence) : '—'} detail="−1 到 +1，表示感受的方向" /><Metric label="平均唤醒度" value={meaningful && analytics.data ? `${Math.round(analytics.data.trend.average_arousal * 100)}%` : '—'} detail="感受的活跃程度，不代表好坏" /></View>
     <View className="sc-insights-grid">
       <SectionCard title="情绪走过的轨迹" eyebrow="效价趋势">

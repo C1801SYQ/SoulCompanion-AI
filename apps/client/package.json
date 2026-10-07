@@ -2,14 +2,18 @@
   "name": "@soulcompanion/client",
   "version": "2.0.0",
   "private": true,
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "build:h5": "taro build --type h5",
+    "build:weapp": "taro build --type weapp",
     "dev:h5": "taro build --type h5 --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --maxWorkers=1"
   },
   "dependencies": {
+    "@cloudbase/js-sdk": "3.10.1",
     "@taroify/core": "1.0.6",
     "@tarojs/components": "4.3.0",
     "@tarojs/helper": "4.3.0",
@@ -60,6 +64,8 @@
     "adm-zip": "0.6.1",
     "glob@^10.4.1": "10.5.0",
     "http-cache-semantics": "4.2.0",
-    "serialize-javascript": "7.1.2"
+    "serialize-javascript": "7.1.2",
+    "solid-js": "1.9.16",
+    "seroval": "1.6.8"
   }
 }

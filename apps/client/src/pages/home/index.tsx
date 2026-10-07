@@ -8,6 +8,7 @@ import { HistoryList } from '../../components/HistoryList';
 import { Metric, PrimaryAction, ResourceNotice, SectionCard, TextAction } from '../../components/Primitives';
 import { useResource } from '../../hooks/useResource';
 import { useCompanion } from '../../state/AppProvider';
+import { CloudRecords } from '../../components/CloudRecords';
 
 function HomePage() {
   const { api, source, motionEnabled } = useCompanion();
@@ -36,6 +37,7 @@ function HomePage() {
       </SectionCard>
     </View>
     <ResourceNotice {...snapshot} retryId="retry-connection" />
+    <CloudRecords />
     {navigationError && <View className="sc-inline-error" role="status"><Text>{navigationError}</Text></View>}
     <View className="sc-two-column sc-home-secondary">
       <SectionCard title="最近情绪记录" eyebrow="今日的几个小片刻" action={<TextAction onClick={() => go('insights')}>全部记录</TextAction>}>

@@ -14,7 +14,7 @@ import { useSession } from '../../state/SessionProvider';
 
 function SessionPage() {
   const { source } = useCompanion();
-  const { adapter, state, start, stop } = useSession();
+  const { adapter, state, start, stop, metadata, retryCloudEnd } = useSession();
   const [selection, setSelection] = useState<MediaSelection>({ camera: true, microphone: true, facing: 'user' });
   const [unexpectedFailure, setUnexpectedFailure] = useState('');
   const [cameras, setCameras] = useState<CameraOption[]>([]);
@@ -74,6 +74,7 @@ function SessionPage() {
       <View className="sc-device-strip"><StatusPill id="camera-status" tone={state.capture.camera.state === 'on' ? 'good' : 'quiet'}>{deviceText('Camera', state.capture.camera)}</StatusPill><StatusPill id="microphone-status" tone={state.capture.microphone.state === 'on' ? 'good' : 'quiet'}>{deviceText('Mic', state.capture.microphone)}</StatusPill></View>
       <View className="sc-media-actions"><PrimaryAction id="session-start" disabled={!canStart} onClick={() => void begin()}>{state.phase === 'starting' ? '等待权限…' : '开始陪伴'}</PrimaryAction><AccessibleButton id="session-stop" className="sc-media-stop" disabled={!canStop || state.phase === 'stopping'} onClick={() => void end()}>结束陪伴</AccessibleButton></View>
       <Text className="sc-local-session-privacy">NO MEDIA UPLOAD · 当前音视频不会上传</Text>
+      <View id="cloud-session-status" role="status" className="sc-media-guidance"><Text>{metadata.message || '本地设备预览；云端账号未登录或未选择档案时不记录会话。'}</Text>{metadata.status === 'end_unconfirmed' && metadata.sessionId && <AccessibleButton id="cloud-session-retry-end" className="sc-small-button" onClick={retryCloudEnd}>重试确认云端结束</AccessibleButton>}</View>
       {(problem || unexpectedFailure) && <View className="sc-media-error" id="media-problem" role="status"><Text>{unexpectedFailure || problem}</Text></View>}
       {stopped && <View className="sc-media-guidance" id="media-stopped-reason" role="status"><Text>{stopped}</Text></View>}
     </View>

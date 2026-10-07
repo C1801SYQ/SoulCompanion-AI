@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MediaSessionController } from '../src/media/MediaSessionController';
+import { CloudSessionBridge } from '../src/cloud/session';
+import { FakeAuthAdapter } from '../src/cloud/auth/fake';
+import type { CloudApi, CloudSession } from '../src/cloud/types';
 import { captureConfig, idleCaptureStatus, MediaCaptureError,
   type AudioChunk, type AudioInputLevel, type CameraFacing, type CaptureStatus, type MediaCaptureAdapter,
   type MediaProblem, type VideoFrame } from '../src/media/types';
@@ -437,6 +440,32 @@ describe('bounded metadata without media retention', () => {
     adapter.emitStatus();
     expect(previous.capture.camera.state).toBe('off');
     expect(controller.getState().capture.camera.state).toBe('requesting');
+  });
+  it.each(['user', 'background', 'offline', 'device_error', 'cleanup_failure'] as const)('local %s stop releases devices while cloud confirmation is pending', async reason => {
+    const { adapter, controller } = setup();
+    const auth = new FakeAuthAdapter(); await auth.signIn();
+    const id = '11111111-1111-4111-8111-111111111111';
+    const metadata: CloudSession = { id, child_profile_id: id, source_platform: 'web', started_at: '2026-10-07T01:00:00Z', ended_at: null, status: 'active', created_at: '2026-10-07T01:00:00Z' };
+    let confirm!: (value: CloudSession) => void;
+    const api = { createSession: vi.fn(() => ({ promise: Promise.resolve(metadata), cancel: vi.fn() })),
+      endSession: vi.fn(() => ({ promise: new Promise<CloudSession>(resolve => { confirm = resolve; }), cancel: vi.fn() })) } as unknown as CloudApi;
+    const bridge = new CloudSessionBridge(auth, api, 'web');
+    let phase = controller.getState().phase;
+    controller.subscribe(() => { const next = controller.getState().phase; if (next === phase) return; phase = next; if (next === 'active') bridge.begin(id); else bridge.end(); });
+    await controller.start(selection); await tick();
+    adapter.emitVideo(frame()); adapter.emitAudio(audio());
+    expect(api.createSession).toHaveBeenCalledWith(id, 'web');
+    if (reason === 'background') controller.setContext({ ...online, visible: false });
+    else if (reason === 'offline') controller.setContext({ ...online, networkOnline: false });
+    else if (reason === 'device_error') { adapter.status.camera.state = 'off'; adapter.emitStatus(); }
+    else { adapter.cleanupFails = reason === 'cleanup_failure'; await controller.stop(); }
+    for (let index = 0; index < 12; index++) await Promise.resolve();
+    expect(adapter.activeTracks).toBe(0);
+    expect(controller.getState().phase).toBe(reason === 'device_error' || reason === 'cleanup_failure' ? 'error' : 'idle');
+    expect(bridge.getState().status).toBe('ending');
+    expect(api.endSession).toHaveBeenCalledWith(id);
+    confirm({ ...metadata, status: 'ended', ended_at: '2026-10-07T01:01:00Z' }); await tick();
+    expect(bridge.getState().status).toBe('ended');
   });
   it.each([{ framesPerSecond: 5 }, { maxWidth: 2000 }, { maxAudioBytes: Infinity },
     { audioChunkMs: 6000 }, { audioChunkMs: 250 }, { maxHeight: NaN }])('refuses unbounded capture configuration', invalid => {

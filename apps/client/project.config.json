@@ -1,0 +1,8 @@
+{
+  "description": "SoulCompanion Phase 04 development client",
+  "miniprogramRoot": "dist-weapp/",
+  "projectname": "SoulCompanion",
+  "appid": "wx11a055ed4dc69764",
+  "compileType": "miniprogram",
+  "setting": { "urlCheck": true, "es6": true, "postcss": true, "minified": true }
+}

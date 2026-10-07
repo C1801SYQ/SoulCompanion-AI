@@ -5,7 +5,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 
-const reviewedLock = '944cbb7574d130e3e23573ccb816b718f3a824f887b655fa9a12fcb567867d97';
+const reviewedLock = 'abbb2ef62113abd65a245d5f8d33de710a079de213832b130ac23006be54d821';
 
 // Reviewed exceptions apply to the locked build tools, not to public input handling.
 // Rationale and limits: docs/v2/02-cross-platform-ui.md. New advisories fail closed.
