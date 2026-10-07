@@ -226,7 +226,7 @@ def test_deploy_does_not_pass_key_to_cli_and_cleans_up_failure(tmp_path, monkeyp
         def capture(self, args, **kwargs):
             assert "withheld-fixture" not in " ".join(args)
             assert "--yes" not in args and "--force" not in args
-            assert args[args.index("--deployMode") + 1] == "zip"
+            assert args[args.index("--deployMode") + 1] == "cos"
             config = Path(args[args.index("--config-file") + 1])
             assert "withheld-fixture" in config.read_text()
             raise AdminError("CLI_OPERATION_FAILED")

@@ -147,3 +147,15 @@ def test_credentials_cannot_enter_cli_body_argument():
 def test_foreign_environment_is_rejected_before_cli():
     with pytest.raises(AdminError, match="WRONG_ENVIRONMENT"):
         CloudAdmin().api("DescribeEnvInfo", {"EnvId": "other-project"})
+
+
+@pytest.mark.parametrize("error", [
+    {"code": "INVALID_PARAM", "message": "synthetic-private-material"},
+    {"code": "synthetic-private-material with spaces", "message": "private"},
+    "synthetic-private-material",
+])
+def test_cli_lowercase_errors_expose_only_sanitized_code(error):
+    with pytest.raises(AdminError) as caught:
+        parse_response(json.dumps({"success": False, "error": error}))
+    assert str(caught.value) == ("INVALID_PARAM" if isinstance(error, dict) and error["code"] == "INVALID_PARAM" else "CLOUD_API_ERROR")
+    assert "synthetic-private-material" not in str(caught.value)

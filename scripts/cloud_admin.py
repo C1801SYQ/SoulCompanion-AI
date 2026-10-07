@@ -33,8 +33,9 @@ def parse_response(output: str) -> dict:
             raise ValueError
     except (ValueError, AttributeError):
         raise AdminError("CLI_INVALID_RESPONSE") from None
-    if data.get("Error"):
-        code = data["Error"].get("Code", "CLOUD_API_ERROR")
+    error = data.get("Error") or data.get("error")
+    if error:
+        code = (error.get("Code") or error.get("code") or "CLOUD_API_ERROR") if isinstance(error, dict) else "CLOUD_API_ERROR"
         safe_code = code if re.fullmatch(r"[A-Za-z0-9_.]{1,100}", str(code)) else "CLOUD_API_ERROR"
         raise AdminError(safe_code)
     return data

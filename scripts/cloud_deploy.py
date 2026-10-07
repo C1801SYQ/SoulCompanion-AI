@@ -190,7 +190,10 @@ def apply_deployment(admin: CloudAdmin, package: Path, plan: dict, existing: boo
         code.mkdir()
         extract_package(package, code)
         with private_config(directory, code, variables) as config:
-            command = ["fn", "deploy", FUNCTION, "--config-file", str(config), "--env-id", ENV_ID, "--region", REGION, "--httpFn", "--dir", str(code), "--deployMode", "zip", "--install-dependency", "false", "--json"]
+            # The pinned Linux dependencies exceed SCF's 1.5 MB inline ZipFile
+            # limit. COS here is the official SCF managed temporary upload,
+            # not an application bucket or a newly provisioned storage service.
+            command = ["fn", "deploy", FUNCTION, "--config-file", str(config), "--env-id", ENV_ID, "--region", REGION, "--httpFn", "--dir", str(code), "--deployMode", "cos", "--install-dependency", "false", "--json"]
             if existing:
                 command.append("--force")
             # No --yes or interactive stdin: payment, upgrades, and unknown
