@@ -66,8 +66,8 @@ jobs:
         with:
           node-version: '24'
       - run: python -m pip install ruff==0.16.10
-      - run: python -m ruff check config.py launch.py main.py core emotion modules hardware reports utils web scripts tests
-      - run: python -m compileall -q config.py launch.py main.py core emotion modules hardware reports utils web scripts tests
+      - run: python -m ruff check config.py launch.py main.py core emotion modules hardware reports utils web cloud scripts tests
+      - run: python -m compileall -q config.py launch.py main.py core emotion modules hardware reports utils web cloud scripts tests
       - run: npm run lint
   dependency-checks:
     runs-on: ubuntu-latest
@@ -144,3 +144,38 @@ jobs:
             apps/client/dist
             .test-artifacts/v2-client-acceptance
             .test-artifacts/v2-media-acceptance
+  cloud-metadata-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r cloud/api/requirements-cloud.txt pytest==9.1.1
+      - run: python -m pytest tests/cloud tests/cloud_tools -q -p no:cacheprovider --basetemp .test-artifacts/cloud-pytest
+      - run: python scripts/cloud_schema.py
+      - run: python scripts/cloud_package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-metadata-package
+          path: |
+            .test-artifacts/cloudbase-phase04/sc-v2-api.zip
+            .test-artifacts/cloudbase-phase04/sc-v2-api.manifest.json
+  client-wechat-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm --prefix apps/client ci --ignore-scripts
+      - run: npm run client:typecheck
+      - run: npm run client:build:weapp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wechat-build-for-owner-devtools
+          path: apps/client/dist-weapp
