@@ -195,8 +195,23 @@ def test_browser_private_credentials_use_stdin_and_output_is_reconstructed(monke
     assert account.password not in json.dumps(result)
 
 
-def test_browser_plan_never_reads_stdin_or_starts_a_browser():
-    result = subprocess.run(["node", str(acceptance.ROOT / "scripts/cloud_browser.cjs")], input="not-private-json", capture_output=True, text=True, timeout=10, cwd=acceptance.ROOT)
+def test_browser_plan_never_reads_stdin_or_starts_a_browser(tmp_path):
+    # Python-only CI jobs have Node but do not install browser dependencies.
+    missing_browser = tmp_path / "missing-browser.cjs"
+    missing_browser.write_text(
+        "const Module = require('node:module');\n"
+        "const load = Module._load;\n"
+        "Module._load = function (request, ...args) {\n"
+        "  if (request === '@playwright/test') {\n"
+        "    const error = new Error('Browser dependency unavailable');\n"
+        "    error.code = 'MODULE_NOT_FOUND';\n"
+        "    throw error;\n"
+        "  }\n"
+        "  return load.call(this, request, ...args);\n"
+        "};\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(["node", "--require", str(missing_browser), str(acceptance.ROOT / "scripts/cloud_browser.cjs")], input="not-private-json", capture_output=True, text=True, timeout=10, cwd=acceptance.ROOT)
     assert result.returncode == 0 and result.stderr == ""
     plan = json.loads(result.stdout)
     assert plan["status"] == "plan" and plan["real_calls"] is False

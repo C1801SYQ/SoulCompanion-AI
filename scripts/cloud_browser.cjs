@@ -4,7 +4,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
-const { chromium, expect } = require('@playwright/test');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'apps', 'client', 'dist');
@@ -80,6 +79,7 @@ async function tokenDenied(token) {
 }
 
 async function acceptance() {
+  const { chromium, expect } = require('@playwright/test');
   const credentials = JSON.parse(fs.readFileSync(0, 'utf8'));
   if (!credentials || typeof credentials.username !== 'string' || typeof credentials.password !== 'string'
     || !/^scphase04_[a-f0-9]{20}$/.test(credentials.username) || credentials.password.length > 32) {
