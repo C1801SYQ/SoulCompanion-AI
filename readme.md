@@ -1,14 +1,218 @@
 # 小予 · SoulCompanion AI
 
-更新：2026-10-03。
+更新：2026-10-08。当前开发分支：`04-cloud-backend`；开发成果尚未合并到 `master`。
 
-SoulCompanion V2 正在按编号分支开发 Web、手机 Web、微信小程序与 Android 客户端。已保留的本地产品在 `01-product-baseline`；`02-cross-platform-ui` 提供 Taro 五页界面与设计系统，`03-device-media-capture` 增加用户主动开启的本地摄像头预览、麦克风采样及资源释放。DEMO_ONLY Preview 也允许主动测试本地设备，当前音视频不上传，尚未接入情绪分析后端。运行步骤见 [V2 客户端](apps/client/README.md)，本阶段验证与平台限制见 [Phase 03](docs/v2/03-device-media-capture.md) 和 [媒体隐私](docs/v2/MEDIA_PRIVACY.md)。
+SoulCompanion V2 面向 ASD 儿童情绪陪伴场景，采用共享客户端、云端账户与元数据服务、终端本地摄像头和麦克风采集的架构。Phase 01～04 已完成对应软件开发与自动验收：Phase 04 的 CloudBase 实际部署、API 和 H5 官方 SDK 验收均通过。当前云端保存账户、儿童档案和会话元数据；**V2 媒体上传、AI 推理和 Android APK 尚未实现**。
 
-面向 ASD 儿童情绪陪伴场景的本地多模态软件。交付范围是**单台电脑、单名本地管理员、单儿童档案**：实时看板、历史记录、家长报告、组件状态、隐私设置和数据维护。核心情绪融合与行为规则保留原有实现。
+本项目是陪伴与研究辅助软件，不提供临床诊断或疗效判断。实际微信开发者工具和手机真机仍待验证。完整结果与限制见 [Phase 04 交付报告](docs/v2/PHASE04_DELIVERY_REPORT.md)。
 
-这是陪伴与研究辅助软件，情绪推断和报告分数不提供临床诊断或疗效判断。真实设备、模型及执行器需要另行实机验收。
+## 平台与技术栈
 
-## Architecture / 架构
+| 平台 / 层 | 当前实现 | 验证范围 |
+| --- | --- | --- |
+| Web / 桌面浏览器 | Taro 4 + React 18 + TypeScript，共享五页 H5 界面 | 构建、响应式布局、本地回归及真实云端 H5 自动验收通过 |
+| 手机 Web | 同一 H5 客户端，移动底部导航与触控布局 | 浏览器移动视口回归通过；不代表所有手机浏览器和实体设备均已验收 |
+| 微信小程序 | Taro 微信构建、媒体适配器和官方 CloudBase 微信登录适配器 | 实际配置构建通过；DevTools、真机登录和设备权限仍 NOT TESTED |
+| Android | 规划复用客户端与 Web 媒体适配器 | 尚无 APK、原生封装或 Android 实机验收 |
+| 静态托管 | Cloudflare Pages 托管 H5 | 公开页面保持 `DEMO_ONLY`，不接入真实云端账户或数据 |
+| 云后端 | CloudBase HTTP 云函数 + 独立 FastAPI `/api/v2` | 实际部署、健康检查、元数据业务和用户隔离验收通过 |
+| 认证与存储 | 官方 CloudBase Auth SDK + CloudBase 文档数据库 | 真实双账户 Web 认证、所有权隔离及数据库直连拒绝通过 |
+
+客户端位于 [apps/client](apps/client/)，云 API 位于 [cloud/api](cloud/api/)。Home、Session、Insights、Reports、Settings 使用共享设计系统。V1 本机看板、SQLite、研究模型和机器人代码继续保留，见下方 Legacy 小节。
+
+## V2 当前架构
+
+```mermaid
+flowchart TB
+  Pages["Cloudflare Pages · 公开 DEMO_ONLY"] --> H5["Web / 手机 Web · H5"]
+  H5 --> Client["共享 Taro + React + TypeScript 客户端"]
+  WeChat["微信小程序 · 人工验收待完成"] --> Client
+  Android["Android · 规划"] -.-> Client
+  Client --> Local["用户主动 Start / End · 终端媒体适配器"]
+  Devices["终端摄像头 / 麦克风"] --> Local
+  Local --> Preview["本地预览 / 有界采样 / 资源释放"]
+  Client -->|"已配置的真实开发构建"| Auth["官方 CloudBase Auth"]
+  Client -->|"HTTPS · Bearer"| API["HTTP Gateway → FastAPI /api/v2"]
+  API --> Verify["在线身份校验 / 应用用户映射"]
+  Verify --> Auth
+  API --> Ownership["服务端 owner 检查"]
+  Ownership --> DB["CloudBase 文档数据库 · ADMINONLY"]
+```
+
+图中云端路径用于显式配置的真实开发构建；公开 Cloudflare DEMO 构建不初始化云认证、不请求云端私有数据。本地媒体只用于预览和采样，当前没有媒体上传或推理链路。
+
+### 云端身份、数据库与数据隔离
+
+- Web 使用官方 CloudBase 用户名/密码登录；微信适配器使用官方微信身份流程。FastAPI 对每个私有请求进行在线 token 校验，不自行存储密码或签发 JWT，也不相信客户端提交的 UID/OpenID。
+- 已验证主体映射为应用用户 UUID；所有私有档案和会话操作使用服务端推导的 owner。跨用户与不存在资源统一返回 404，匿名私有访问返回 401。
+- 七个项目集合保存应用用户、身份映射、儿童档案、会话、只读情绪/报告及 schema marker；十三个索引已核对，集合权限为 ADMINONLY。客户端不能绕过 API 直查数据库。
+- 令牌只保存在客户端内存，刷新后重新登录。退出、账户切换和 401 会清除私有界面与过期响应。服务端 key 仅放在忽略的部署配置和云函数托管环境变量中。
+- 精确 CORS、请求大小/超时限制、应用及网关限流保护开发 API。现有开发环境是有限期限和配额的 CloudBase 体验版，**不是永久免费或无限资源**；Phase 04 验收时超额付费和自动续费均关闭。
+
+数据库选择与权限边界见 [DATABASE_DECISION](docs/v2/DATABASE_DECISION.md)、[CLOUD_PRIVACY](docs/v2/CLOUD_PRIVACY.md) 和 [schema 声明](cloud/schema/001_metadata.json)。[云架构设计记录](docs/v2/CLOUD_ARCHITECTURE.md) 保留早期设计状态，当前完成情况以交付报告为准。
+
+### 终端摄像头与麦克风
+
+用户主动 Start 后才请求权限，提供本地视频预览、有界图像/音频采样和麦克风强度；页面加载和导航不会自动启用设备。End、离开页面、后台切换或错误会停止采集并释放资源，返回页面不会自动重启。
+
+本地 Stop 先完成，再异步结束云端会话元数据，不等待网络。原始视频、图像、音频、PCM、设备 ID/label 不进入云 API，也不将采样冒充情绪、转录或 AI 回复。公开 DEMO 页面仍允许用户主动体验本地设备。详细边界见 [媒体隐私](docs/v2/MEDIA_PRIVACY.md)。
+
+## 当前功能与阶段进度
+
+已完成：
+
+- 共享五页客户端、桌面/移动导航、响应式布局、减少动态效果设置、明确 DEMO 与错误/离线状态。
+- 用户主动开启的本地摄像头/麦克风会话、预览/采样及生命周期清理。
+- CloudBase Web 登录/退出、用户昵称、儿童档案新增/修改/选择/归档。
+- 云会话元数据创建、读取、列表和幂等结束；用户数据隔离与匿名拒绝。
+- 独立 FastAPI V2 API 的实际 CloudBase 部署，以及真实 API/H5 自动验收。
+
+当前未实现或未验证：
+
+- **未实现：V2 云端媒体上传、实时情绪推理链路、新 AI 推理服务、Android APK。** 情绪记录和报告接口当前只读，真实空数据不会生成结论。
+- **待人工验证：微信 DevTools、手机微信登录、权限与实体设备行为。** 构建成功和浏览器虚拟设备测试不能替代真机验证。
+- 尚未发布真实云账户的公开生产客户端，未迁移本地 SQLite 数据，未合并 `master`。
+
+| 阶段 | 已记录主题 / 分支 | 当前进度 |
+| --- | --- | --- |
+| Phase 01 | `01-product-baseline` · 本地产品基线 | 已完成并保留 |
+| Phase 02 | `02-cross-platform-ui` · 跨平台界面与设计系统 | 开发、构建与软件验收完成 |
+| Phase 03 | `03-device-media-capture` · 终端媒体采集 | 开发与浏览器自动验收完成；实体设备验收仍有平台限制 |
+| Phase 04 | `04-cloud-backend` · 云后端 | 实际部署、API/H5 自动验收完成；微信人工验证待完成 |
+| Phase 05 | `05-realtime-emotion-pipeline` · 实时情绪链路 | 规划，未开始 |
+| Phase 06 | `06-algorithm-modernization` · 算法现代化 | 规划，未开始 |
+| Phase 07 | `07-wechat-miniapp` · 微信小程序完整平台验收 | 规划，未开始 |
+| Phase 08 | `08-android-apk` · Android APK | 规划，未开始 |
+| Phase 09 | `09-cloud-release` · 云端发布 | 规划，未开始 |
+| Phase 10 | `10-release-candidate` · 候选发布版本 | 规划，未开始 |
+
+编号路线来自 [Phase 01 记录](docs/v2/01-product-baseline.md)。Phase 05～10 是规划主题，不表示分支、服务或安装包已交付；本轮停在 Phase 04。
+
+## 快速启动
+
+建议使用 Node.js **24**、Python **3.12**。CloudBase 云函数运行时为 Python **3.11**；云 API 支持 Python 3.11 及以上。V2 客户端开发和轻量测试不需要下载感知模型或启动机器人。
+
+### 1. 获取当前开发分支并安装依赖
+
+```powershell
+git clone --branch 04-cloud-backend https://github.com/C1801SYQ/SoulCompanion-AI.git
+cd SoulCompanion-AI
+python -m venv .venv
+& ./.venv/Scripts/python.exe -m pip install -r requirements-web.txt -r requirements-dev.txt -r cloud/api/requirements-cloud.txt
+npm ci --ignore-scripts
+npm --prefix apps/client ci --ignore-scripts
+```
+
+Linux/macOS 将示例中的 `.venv/Scripts/python.exe` 换为 `.venv/bin/python`，并使用对应 shell 的环境变量语法。已有仓库应先检查工作区再切换分支，不覆盖未提交工作。
+
+### 2. 本地 DEMO 与设备预览
+
+```powershell
+$env:PUBLIC_DEMO_ONLY = 'true'
+npm --prefix apps/client run dev:h5
+```
+
+打开 [本地 H5](http://127.0.0.1:5173/#/home)。情绪/报告使用明确标注的合成数据，云账户关闭；摄像头和麦克风仍需用户主动 Start。浏览器需要支持媒体 API，实际设备权限由浏览器和系统控制。
+
+### 3. 真实 CloudBase 元数据开发预览
+
+在同一仓库根目录的新终端中，使用已验证的公开开发配置：
+
+```powershell
+$env:PUBLIC_CLOUDBASE_ENV_ID = 'soulcompanion-dev-d0dzo6f2a24211'
+$env:PUBLIC_CLOUDBASE_REGION = 'ap-shanghai'
+$env:PUBLIC_WECHAT_APP_ID = 'wx11a055ed4dc69764'
+$env:PUBLIC_API_BASE_URL = 'https://soulcompanion-dev-d0dzo6f2a24211-1501181209.ap-shanghai.app.tcloudbase.com'
+$env:PUBLIC_DEMO_ONLY = 'false'
+Remove-Item Env:CF_PAGES -ErrorAction SilentlyContinue
+npm run client:build:h5
+& ./.venv/Scripts/python.exe -m http.server 18404 --bind 127.0.0.1 --directory apps/client/dist
+```
+
+打开 [本地云端开发预览](http://127.0.0.1:18404/#/home)，在云账户页面使用自己有权限的 CloudBase 账户登录。该预览连接真实开发环境；情绪与报告的云端空状态仍是空状态，不会启动 AI 推理。
+
+`PUBLIC_API_BASE_URL` 是 HTTPS **origin，不带 `/api/v2`**；客户端自行附加 V2 路径。目前云端 CORS 精确允许 `http://127.0.0.1:18404`，不能把 5173、localhost 或新的公开域名当作同一个 origin。更改允许来源须按部署文档处理；以上清除 `CF_PAGES` 仅影响当前终端，不修改公开站点。
+
+### 4. 微信小程序构建
+
+保留上一节的公开配置，停止占用终端的本地预览服务器后执行：
+
+```powershell
+npm run client:build:weapp
+```
+
+输出为 `apps/client/dist-weapp`。使用有 AppID 权限的账号导入微信开发者工具；合法 request 域名、微信登录和真机步骤见 [MANUAL_ACTIONS](docs/v2/MANUAL_ACTIONS.md)。Android 目前只有规划，没有 APK 构建命令。
+
+## 开发配置
+
+[.env.example](.env.example) 是配置参考；以下变量应在相应启动/构建终端或托管环境中显式配置。模板同时包含 Legacy V1 与 Phase 04 字段，两者独立。
+
+| 变量 | 作用 / 边界 |
+| --- | --- |
+| `PUBLIC_API_BASE_URL` | V2 云端 HTTPS origin；为空时云功能关闭，不填密码或 key |
+| `PUBLIC_CLOUDBASE_ENV_ID` / `PUBLIC_CLOUDBASE_REGION` | 前端公开环境 ID / 地域 |
+| `PUBLIC_WECHAT_APP_ID` | 小程序公开 AppID，不是 AppSecret |
+| `PUBLIC_DEMO_ONLY` | true 表示合成展示且禁用云账户；不禁止用户主动本地采集 |
+| `CF_PAGES` | Pages 构建标识为 1 时强制 DEMO_ONLY，即使上一变量为 false |
+| `PUBLIC_API_URL` | 独立的 Legacy V1 情绪 API 配置；不要与 V2 base 混用 |
+| `CLOUD_ALLOWED_ORIGINS` | 云函数精确 CORS 来源，当前验收为本机 18404 origin |
+| `CLOUDBASE_ENV_ID` / `CLOUDBASE_APIKEY` | 服务端配置；key 只放忽略的本地部署文件或云函数托管环境，绝不进入前端 |
+
+不要把密码、API Key、Token、Secret、登录文件、真实儿童记录或媒体写入源码、README、截图和公开产物。服务端 key 轮换与体验环境期限见人工操作文档；本 README 不包含任何凭据。
+
+## 测试与验证
+
+以下为本地软件回归，认证/数据库测试使用受控测试实现；它们不替代真实 CloudBase、微信或实体设备证据。
+
+```powershell
+& ./.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp .test-artifacts/pytest-readme
+& ./.venv/Scripts/python.exe -m ruff check config.py launch.py main.py core emotion modules hardware reports utils web cloud scripts tests
+npm run client:typecheck
+npm run client:test
+npm run client:audit
+npm test
+npm run test:demo
+npm run lint
+
+# 为隔离的浏览器回归构建真实模式客户端，清除此前的 DEMO/云端构建选项
+$env:PUBLIC_DEMO_ONLY = 'false'
+$env:PUBLIC_API_BASE_URL = ''
+Remove-Item Env:CF_PAGES -ErrorAction SilentlyContinue
+npm run client:build:h5
+npx playwright install chromium
+$env:SOULCOMPANION_PYTHON = (Resolve-Path ./.venv/Scripts/python.exe).Path
+npm run client:test:e2e
+npm run client:test:media
+git diff --check
+```
+
+重复 pytest 可选择新的 `--basetemp` 路径，避免 Windows 旧缓存权限问题。浏览器脚本使用独立、明确标注的合成 SQLite 记录与 Chromium 虚拟设备，不操作默认真实数据库或开发者物理摄像头。
+
+仅检查云 API 与工具：`python -m pytest tests/cloud tests/cloud_tools -q`（使用上面安装依赖的解释器）。真实云端验收是另行授权的显式操作，会重置两个已有合成测试账户的密码并写入合成元数据；先阅读部署文档，默认计划模式不调用云端，不把它放入普通无凭据 CI。
+
+Phase 04 交付时已验证 Python **513** 项、客户端 **241** 项、连续三次 H5 E2E、14 组 media、真实 API **11** 项和 SDK 浏览器 **12** 项；功能与文档交付的九项 CI 均通过。详细快照见交付报告和 [已验证的交付 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37745126455)。依赖审计策略通过不等于没有漏洞，继承风险在报告中记录。
+
+## 部署与文档入口
+
+Cloudflare Pages 只负责静态 H5，不能运行 Python/FastAPI。当前 V2 Preview 使用根目录 `apps/client`、构建命令 `npm ci --ignore-scripts && npm run build:h5`、输出 `dist`、Node.js 24，保留 `PUBLIC_DEMO_ONLY=true`。当前公开站点不切换至真实云 API，也不改变其生产分支配置。
+
+FastAPI V2 已部署为既有 CloudBase 环境中的 `sc-v2-api` HTTP 云函数，默认 HTTPS 网关 `/` 透传 `/api/v2`；文档数据库继续使用现有实例。体验版具有期限和资源额度，后续成本与续用须由所有者确认；不自动购买、升级、开启超额付费或自动续费。
+
+| 文档 | 用途 |
+| --- | --- |
+| [Phase 04 交付报告](docs/v2/PHASE04_DELIVERY_REPORT.md) | 31 项结果、端点、真实证据、用量与限制 |
+| [CloudBase 部署](docs/v2/CLOUDBASE_DEPLOY.md) | 审计、schema、打包、受控部署和真实验收 |
+| [微信人工操作](docs/v2/MANUAL_ACTIONS.md) | DevTools/真机、合法域名、key 轮换 |
+| [云端隐私](docs/v2/CLOUD_PRIVACY.md) / [媒体隐私](docs/v2/MEDIA_PRIVACY.md) | 用户隔离与终端采集边界 |
+| [Phase 01](docs/v2/01-product-baseline.md) / [Phase 02](docs/v2/02-cross-platform-ui.md) / [Phase 03](docs/v2/03-device-media-capture.md) | 保留基线、UI 和媒体阶段记录 |
+| [客户端基础说明](apps/client/README.md) | Phase 02/03 的开发、构建与平台说明；Phase 04 状态以本 README 和交付报告为准 |
+| [Legacy 部署](DEPLOY.md) / [旧 Cloudflare 静态演示](docs/Cloudflare部署指南.md) | V1 单机产品与旧合成站的历史运行方案 |
+
+## Legacy / Research Prototype
+
+旧研究原型与 Phase 01 本机产品仍保留。`web/` 的 Vanilla JS 看板和 FastAPI `/api/v1`、本地 SQLite、`core/`、`emotion/`、`modules/`、`hardware/`、`launch.py`、Ollama/TTS 与机器人循环不作为 V2 云主架构，也不证明 V2 云推理或实体机器人已经交付。
+
+### 原本地研究架构
 
 ```mermaid
 flowchart LR
@@ -28,199 +232,31 @@ flowchart LR
   LLM --> TTS[本地语音输出]
 ```
 
-一个进程内共享设备状态，使用一个 Web worker。实时快照不查询历史数据库或调用模型；页面每秒读取一次快照，系统状态约 7 秒、历史与趋势至少 30 秒、报告至少 60 秒或手动刷新。数据库操作独立关闭连接。
+Legacy 交付范围为单台电脑、单名本地管理员、单儿童档案、单 Web worker。V1 的本机安全边界和 SQLite 保持独立，不允许通过公网端口、隧道或反向代理分享真实 V1 看板；云端没有迁移该数据库。
 
-原始架构、风险分级和设计取舍见 [PRODUCT_AUDIT](docs/PRODUCT_AUDIT.md)。接口文档启动后访问 `/docs`；正式接口采用具名 Pydantic 模型与统一错误、请求编号。
-
-## Quick Start / 快速启动
-
-已验证环境：Windows、Python **3.12**。Web 模式只需要轻量依赖，不下载感知模型，也不需要摄像头。
+### 保留的本机入口
 
 ```powershell
-git clone https://github.com/C1801SYQ/SoulCompanion-AI.git
-cd SoulCompanion-AI
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt
-.\.venv\Scripts\python.exe -m web.app
+# 轻量 V1 Web：不自动启用设备或下载模型
+& ./.venv/Scripts/python.exe -m web.app
+
+# 在另一个终端运行本机 launcher，不启用机器人
+& ./.venv/Scripts/python.exe launch.py --no-robot
+
+# 默认 Fake 硬件软件检查，不能作为真实设备通过证据
+& ./.venv/Scripts/python.exe scripts/hardware_smoke_test.py
 ```
 
-打开 http://127.0.0.1:8000 。Linux 可将上述解释器替换成 `.venv/bin/python`。
+V1 Web 默认在 `http://127.0.0.1:8000`。完整研究链路另需 `requirements.txt`、兼容 ONNX/Haar/Vosk/SER 模型、Ollama 和目标机器设备；未连接设备时显示不可用/降级，不用假情绪掩盖失败。`--hardware` 不能证明实体执行器存在，当前执行器仍有模拟实现。
 
-页面会显示 `REAL` 与实际 SQLite 历史；未连接设备时明确显示“暂无感知数据”、风险未知和组件降级。空数据库的报告没有健康分数。`/healthz` 检查存活；`/readyz` 返回正常、明确降级原因或不可用（503）。
+真实模式的 Legacy SQLite 可能含原始语音文本、上下文和推断；数据库、备份、导出和日志须留在受控本机，不能提交或同步到公开目录。`scripts/data_admin.py` 保留本地备份、导出与带备份/确认的数据维护功能，DEMO 模式拒绝真实库维护。
 
-本地产品基线已提交并推送到 `01-product-baseline`，尚未合并 `master`。克隆后检出该分支可取得保留的交付版本；开发新客户端请使用对应编号分支。基线已用干净源码副本与新虚拟环境验证安装流程。
-
-## Real Mode / 真实模式
-
-```powershell
-# 只读取本地历史，不开启摄像头、麦克风或机器人
-.\.venv\Scripts\python.exe launch.py --no-robot
-
-# 安装感知依赖并准备下述模型、设备后，启动完整本地链路
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe launch.py
-```
-
-完整模式的摄像头、麦克风、Vosk、SER、ONNX、Ollama 和执行器状态分别检查。模型缺失或设备失败会显示原因。`--hardware` 是请求硬件的选项；本仓库提供的执行器仍为模拟器，不能据此声称实体机器人已连接。按 Ctrl+C 关闭并释放资源。
-
-## Demo Mode / 显式演示
-
-完全不采集、不访问真实历史数据库的本地演示：
-
-```powershell
-$env:SOULCOMPANION_DEMO_MODE='true'
-.\.venv\Scripts\python.exe launch.py
-```
-
-恢复真实模式前在新终端启动，或设置 `$env:SOULCOMPANION_DEMO_MODE='false'`。DEMO 后端禁用真实历史及旧数据接口。
-
-页面也提供 `DEMO · 合成演示` 按钮及 `?demo=1`。它们只改变浏览器显示，不停止另一个正在运行的真实采集进程。所有演示内容与导出都标注 `DEMO DATA`。网络错误不会自动切换演示，断线显示 `Backend disconnected · OFFLINE`，无效响应显示 `ERROR`。
-
-静态演示不包含真实数据，不连接 API：
-
-```powershell
-.\.venv\Scripts\python.exe scripts/build_site.py --out .test-artifacts/site
-.\.venv\Scripts\python.exe -m http.server 8080 --bind 127.0.0.1 --directory .test-artifacts/site
-```
-
-静态站始终 DEMO，真实模式按钮禁用，包括 `?nodemo=1`。构建器拒绝覆盖未标记的非空目录。Cloudflare 只能托管此合成静态产物，见 [静态发布说明](docs/Cloudflare部署指南.md)。`streamlit_dashboard.py` 是独立旧合成演示；正式入口使用 FastAPI 看板。
-
-## Environment Variables / 配置
-
-[.env.example](.env.example) 是参考模板，**不会自动加载**。在启动终端设置环境变量；CLI 的 `--host`、`--port` 优先于默认配置。非法配置给出变量名和要求。
-
-| 变量 | 默认值与用途 |
-| --- | --- |
-| `SOULCOMPANION_APP_ENV` | `production`；可选 development/test/production |
-| `SOULCOMPANION_DEMO_MODE` | false；true 禁用真实采集与历史访问 |
-| `SOULCOMPANION_DB` | 项目 `data/emotional_db.sqlite`；可设持久化绝对路径 |
-| `SOULCOMPANION_DASHBOARD_HOST` | 127.0.0.1；仅允许 localhost/回环 IP |
-| `SOULCOMPANION_DASHBOARD_PORT` | 8000；1–65535 |
-| `SOULCOMPANION_CORS_ORIGINS` | 本机 8000 来源；禁止远程和通配来源 |
-| `SOULCOMPANION_LOG_LEVEL` | INFO；DEBUG/INFO/WARNING/ERROR/CRITICAL |
-| `SOULCOMPANION_RATE_LIMIT` | 每分钟 180 次 API 请求，30–10000；所有本机标签页共享 |
-| `SOULCOMPANION_RETENTION_DAYS` | 0 永久保留；1–3650 是手动维护策略，不自动删除 |
-| `OLLAMA_URL` | http://localhost:11434/api/generate；仅允许本地地址，无代理或重定向 |
-| `OLLAMA_MODEL` | gemma3n:e4b；须与本机已安装标签一致 |
-| `OLLAMA_TIMEOUT` | 每次请求总时限 60 秒，1–120；包含连接、响应头和正文，最多重试一次 |
-| `SOULCOMPANION_VISION_MODEL` | models/onnx_model.onnx |
-| `SOULCOMPANION_HAAR_PATH` | models/haarcascade_frontalface_default.xml |
-| `SOULCOMPANION_VOSK_PATH` | model |
-| `SOULCOMPANION_SER_PATH` | models/ser_model |
-
-模型相对路径按仓库根目录解释。`SOULCOMPANION_API_KEY` 是未使用的旧保留字段，不提供身份认证。
-
-## Models / 模型
-
-完整感知模式需自行提供许可合适且与适配器输入、标签对应的模型：ONNX 情绪模型、Haar 人脸分类器、Vosk 离线模型和本地 Hugging Face SER 模型及特征提取器。模型目录不由软件验收脚本下载。SER 加载明确使用 `local_files_only=True`。
-
-Ollama 由管理员单独安装与启动；`ollama list` 检查模型标签，配置 `OLLAMA_MODEL` 为实际存在的标签。状态探针仅检查本地服务和模型列表。生成失败、超时、非 200、无效 JSON 或空结果使用确定性温和回复；连接或超时最多重试一次，总等待最多约两倍请求时限。正文上限 64KiB，停止时取消当前 socket。
-
-轻量 Web 的锁定依赖见 `requirements-web.txt` 和 `constraints-web.txt`；可选大型感知依赖在 `requirements.txt`，其全部平台/模型组合尚未安装验收。
-
-## Hardware / 设备验收
-
-```powershell
-# 默认仅 Fake 软件接口测试；结果明确 verified_hardware=false
-.\.venv\Scripts\python.exe scripts/hardware_smoke_test.py
-
-# 准备设备依赖后进行真实探测；不会自动下载模型
-.\.venv\Scripts\python.exe scripts/hardware_smoke_test.py --real
-```
-
-真实探测可能占用摄像头和麦克风。失败状态与检查原因需要逐项处理；软件 Fake 通过不能替代实机验收。本轮未验证实际儿童会话或实体执行器。
-
-## Development / 开发
-
-保留 Vanilla JS、同源 REST 与 SQLite；不加入空的认证、多租户字段或未使用迁移依赖。正式 API 位于 `web/product.py`，应用服务位于 `web/service.py`，契约位于 `web/contracts.py`；旧 GET API 暂时保留同样本机边界。部署请固定为单 worker。
-
-历史记录分页范围为 1/7/30 天，每页 1–500 条；看板每页 20 条。风险状态来自快照，与所选报告日期独立。报告分数是研究规则输出；空数据为 null。
-
-## Testing / 测试
-
-Python 3.12、Node.js 24 用于软件检查；CI 不下载感知模型。
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt -r requirements-dev.txt
-New-Item -ItemType Directory -Force .test-artifacts
-.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .test-artifacts/pytest-local
-.\.venv\Scripts\python.exe -m ruff check config.py launch.py main.py core emotion modules hardware reports utils web scripts tests
-.\.venv\Scripts\python.exe scripts/acceptance_smoke.py
-npm ci --ignore-scripts
-npm test
-npm run test:demo
-npm run build
-npm run lint
-npx playwright install chromium
-$env:SOULCOMPANION_PYTHON=(Resolve-Path .\.venv\Scripts\python.exe).Path
-npm run test:e2e
-```
-
-重复 pytest 时使用新的 `--basetemp` 路径；Windows 上旧缓存权限可能影响重复运行。浏览器结果与截图位于 `.test-artifacts/browser-acceptance`。验收脚本使用明确标注的合成记录写入真实临时 SQLite 并请求真实 HTTP 后端，测试分页、报告和重启持久化；它们不会操作默认真实数据库。
-
-依赖检查：`python -m pip_audit --disable-pip --no-deps -r constraints-web.txt` 和 `npm audit --audit-level=high`。前者检查轻量运行时全部锁定依赖，未包含可选大型感知依赖。
-
-## Production / 生产运行与部署
-
-采用经过验证的 Windows 原生轻量 Web 部署，完整 Edge 也在原生进程运行。安装、持久化、备份和可选 Linux Docker 配方见 [DEPLOY.md](DEPLOY.md)。本机没有 Docker，本轮不声称镜像已经构建或运行。
-
-GitHub Actions 定义 backend-tests、frontend-build、frontend-tests、lint、dependency-checks；远程结果需要提交后由 GitHub 实际执行，本轮没有推送，不能宣称远程全绿。
-
-## Security / 安全边界
-
-本版本明确采用 **Local-only Product**。本机登录用户是管理员；没有远程家长账户、登录会话或多租户授权。应用拒绝非回环绑定、远程客户端、非法 Host、跨站 Origin 和转发头；CORS 仅控制浏览器来源。所有新版、旧版接口及 API 文档共享边界。
-
-不得通过公网端口、隧道或反向代理分享真实看板。对外演示仅发布合成静态产物。未来远程版本须先实现成熟密码散列、HttpOnly 会话、注销、授权、CSRF、HTTPS 与数据归属迁移。
-
-后端错误返回通用说明和 request_id；日志不记录原始儿童话语、提示词或模型回复。前端动态文本使用 `textContent`，不会将用户或 LLM 字符串作为 HTML 执行。旧 CloudSync 的远程 relay 明确禁用，`EMOTION_RELAY_URL` 配置会被拒绝。
-
-## Privacy / 隐私与数据维护
-
-真实模式可能在本机 SQLite 保存原始语音文本、上下文和推断。正式 v1 历史 API 与默认导出不包括原始文本；兼容旧历史接口仍可能返回原始文本，原因和报告也可能敏感。它们都受同一本机访问边界保护。数据目录、备份、导出、日志和截图应由管理员限制访问，不提交到 Git，不同步到公网目录。Windows 文件模式不等同于完整 ACL 或磁盘加密。
-
-数据库有版本和事务迁移，保留旧数据及索引；更高版本拒绝写入。维护命令只操作现有数据库，输出文件必须不存在，父目录预先创建：
-
-```powershell
-.\.venv\Scripts\python.exe scripts/data_admin.py info
-.\.venv\Scripts\python.exe scripts/data_admin.py backup --output data/before.sqlite
-.\.venv\Scripts\python.exe scripts/data_admin.py export --output data/emotions.json
-.\.venv\Scripts\python.exe scripts/data_admin.py export --output data/emotions.csv
-# 显式包含原始话语：export --output data/raw.json --include-raw
-# 清理30天前记录：先验证备份，再删除；需要明确确认
-.\.venv\Scripts\python.exe scripts/data_admin.py retention --days 30 --backup data/before-retention.sqlite --confirm-delete
-# 删除所有记录，仍然必须备份
-.\.venv\Scripts\python.exe scripts/data_admin.py delete --backup data/before-delete.sqlite --confirm-delete
-```
-
-指定另一数据库：`python scripts/data_admin.py --db <绝对路径> info`。DEMO 模式拒绝真实库维护。备份完整包含原始文本；删除源记录并不会删除备份，也不承诺磁盘残余的法证级擦除。保留期限由管理员显式执行，不是后台定时任务。
-
-## Known Limitations / 已知限制
-
-- 无远程账户、多儿童或多租户；无公网真实数据产品入口。
-- 实际摄像头、麦克风、ONNX/Vosk/SER 模型、Ollama 生成及实体执行器仍需目标机器验收。
-- SQLite 适合单机规模；多个 worker 或多个采集进程不属于当前交付范围。
-- 阻塞的第三方模型/音频调用只能在限定等待后报告停止超时；不能强制安全中断第三方驱动。Ollama HTTP 使用总时限和 socket 取消。
-- 旧 Streamlit 机器人入口已停用，使用统一 FastAPI/launcher 生命周期；独立 Streamlit 合成示例不属于主要验收界面。
-- Docker 与 GitHub Actions 远程运行尚未在本轮实际执行。
-
-## Troubleshooting / 故障排查
-
-| 现象 | 处理 |
-| --- | --- |
-| `REAL` 但没有情绪 | 检查设备页；Web-only 未连接 bridge 时是预期结果 |
-| `/readyz` degraded | 查看每个组件 reason；缺设备或 Ollama 不应冒充 healthy |
-| `Backend disconnected` | 启动本机后端，确认端口，然后点击重新连接；不会自动 Demo |
-| `ERROR` | 检查通用错误与 request_id；无效响应、429 或契约错误均保留真实模式 |
-| 429 | 多标签页共享限额；关闭多余页面并等待 Retry-After |
-| 数据库不可用/503 | 核对配置路径、目录权限和版本；维护前使用备份，勿删 WAL 文件 |
-| 非法 PORT/HOST | 按错误变量名修正；本版不允许 0.0.0.0 |
-| 静态构建拒绝目标目录 | 选新的空目录，或此前由构建器标记的目录；不删除已有用户文件 |
-| 模型缺失/损坏 | 配置本地兼容模型；查看组件状态，勿用默认中性情绪掩盖失败 |
+原审计、数据维护和部署取舍见 [PRODUCT_AUDIT](docs/PRODUCT_AUDIT.md)、[Phase 01](docs/v2/01-product-baseline.md) 与 [DEPLOY](DEPLOY.md)。旧 `streamlit_dashboard.py` 合成示例、感知模型和机器人研究代码没有因 README 更新而删除。
 
 ## 版权与许可
 
 本项目及源代码、文档、设计、模型和数据结构的知识产权归 **予怀团队** 所有，最终解释权归予怀团队。仅供学术研究、教育及团队内部使用；未经书面授权不得商业使用、二次分发或售卖。合作和授权请联系予怀团队。
 
-本项目为辅助工具，不能替代专业诊断或治疗；原有许可与免责声明不因本轮工程改动改变。
+本项目为辅助工具，不能替代专业诊断或治疗；原有许可与免责声明不因本轮文档改动改变。
 
 © 予怀团队 · SoulCompanion AI
