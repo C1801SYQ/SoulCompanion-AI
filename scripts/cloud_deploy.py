@@ -28,10 +28,10 @@ FUNCTION = "sc-v2-api"
 OWNER_MARKER = "SoulCompanion-AI phase04 HTTP API; owner=phase04"
 ARTIFACTS = ROOT / ".test-artifacts/cloudbase-phase04"
 ROUTE = {
-    "path": "/", "upstreamResourceType": "WEB_SCF", "upstreamResourceName": FUNCTION,
-    "enable": True, "enableAuth": False, "enableSafeDomain": False,
-    "enablePathTransmission": True,
-    "qpsPolicy": {"qpsTotal": 20, "qpsPerClient": {"limitBy": "ClientIP", "limitValue": 5}},
+    "Path": "/", "UpstreamResourceType": "WEB_SCF", "UpstreamResourceName": FUNCTION,
+    "Enable": True, "EnableAuth": False, "EnableSafeDomain": False,
+    "EnablePathTransmission": True,
+    "QPSPolicy": {"QPSTotal": 100, "QPSPerClient": {"LimitBy": "ClientIP", "LimitValue": 5}},
 }
 
 
@@ -106,7 +106,7 @@ def inspect_resources(admin: CloudAdmin) -> tuple[dict, bool, bool]:
         if route.get("Enable") is not True or route.get("EnableAuth") is not False or route.get("EnableSafeDomain") is not False or route.get("EnablePathTransmission") is not True:
             raise AdminError("OWNED_ROUTE_CONFIG_UNVERIFIED")
         policy = route.get("QPSPolicy") or {}
-        if policy.get("QPSTotal") != 20 or policy.get("QPSPerClient") != {"LimitBy": "ClientIP", "LimitValue": 5}:
+        if policy.get("QPSTotal") != 100 or policy.get("QPSPerClient") != {"LimitBy": "ClientIP", "LimitValue": 5}:
             raise AdminError("OWNED_ROUTE_RATE_LIMIT_UNVERIFIED")
     return {
         **free, "function": FUNCTION, "runtime": "Python3.11", "memory_mb": 256,
@@ -114,7 +114,7 @@ def inspect_resources(admin: CloudAdmin) -> tuple[dict, bool, bool]:
         "gateway_path": "/", "api_base_url": f"https://{domain}",
         "function_action": "update_owned" if existing else "create",
         "route_action": "retain_owned" if route_exists else "create",
-        "gateway_qps_total": 20, "gateway_qps_per_ip": 5,
+        "gateway_qps_total": 100, "gateway_qps_per_ip": 5,
     }, existing, route_exists
 
 
@@ -203,9 +203,16 @@ def apply_deployment(admin: CloudAdmin, package: Path, plan: dict, existing: boo
             if result.get("success") is not True or len(outcomes) != 1 or outcomes[0].get("name") != FUNCTION or outcomes[0].get("status") != "success":
                 raise AdminError("FUNCTION_DEPLOY_NOT_CONFIRMED")
         if not route_exists:
-            data = json.dumps({"domain": plan["gateway_domain"], "routes": [ROUTE]}, separators=(",", ":"))
-            parse_response(admin.capture(["routes", "add", "--env-id", ENV_ID, "--region", REGION, "--data", data, "--json"]))
-    verified, _, _ = inspect_resources(admin)
+            # Match the official declarative default-domain deployer. The CLI
+            # routes add preflight verifies custom-domain binding and rejects
+            # the existing system domain; it is not needed to bind that domain.
+            admin.api("CreateHTTPServiceRoute", {
+                "EnvId": ENV_ID,
+                "Domain": {"Domain": plan["gateway_domain"], "Routes": [ROUTE]},
+            }, write=True)
+    verified, function_verified, route_verified = inspect_resources(admin)
+    if not function_verified or not route_verified:
+        raise AdminError("DEPLOYED_RESOURCES_NOT_PRESENT")
     evidence = {**verified, **package_evidence, "status": "deployed_configuration_verified", "health_acceptance": "pending_separate_acceptance"}
     (ARTIFACTS / "deployment-public.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return evidence

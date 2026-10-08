@@ -13,7 +13,7 @@ REGION = "ap-shanghai"
 PRIVATE_ENV = ROOT / ".test-artifacts/cloudbase-phase04/.env"
 CLI_ENTRY = ROOT / ".test-artifacts/cloudbase-cli/node_modules/@cloudbase/cli/dist/standalone/cli.js"
 READ_ACTIONS = {"DescribeEnvInfo", "DescribeBillingInfo", "ListTables", "DescribeTable", "DescribeDatabaseACL", "GetProviders", "DescribeHTTPServiceRoute", "DescribeEnvAccountCircle", "DescribeCreditsUsageDetail"}
-WRITE_ACTIONS = {"CreateTable", "UpdateTable", "ModifyDatabaseACL", "CreateApiKey"}
+WRITE_ACTIONS = {"CreateTable", "UpdateTable", "ModifyDatabaseACL", "CreateApiKey", "CreateHTTPServiceRoute"}
 
 
 class AdminError(RuntimeError):

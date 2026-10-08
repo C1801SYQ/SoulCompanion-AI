@@ -148,7 +148,7 @@ def owned_function():
 
 
 def owned_route():
-    return {"Path": "/", "UpstreamResourceType": "WEB_SCF", "UpstreamResourceName": cloud_deploy.FUNCTION, "Enable": True, "EnableAuth": False, "EnableSafeDomain": False, "EnablePathTransmission": True, "QPSPolicy": {"QPSTotal": 20, "QPSPerClient": {"LimitBy": "ClientIP", "LimitValue": 5}}}
+    return {"Path": "/", "UpstreamResourceType": "WEB_SCF", "UpstreamResourceName": cloud_deploy.FUNCTION, "Enable": True, "EnableAuth": False, "EnableSafeDomain": False, "EnablePathTransmission": True, "QPSPolicy": {"QPSTotal": 100, "QPSPerClient": {"LimitBy": "ClientIP", "LimitValue": 5}}}
 
 
 def test_dry_plan_is_bounded_and_does_not_return_function_secrets():
@@ -235,3 +235,57 @@ def test_deploy_does_not_pass_key_to_cli_and_cleans_up_failure(tmp_path, monkeyp
         cloud_deploy.apply_deployment(FailDeploy(), tmp_path / "api.zip", plan, existing, route_exists)
     assert list(tmp_path.iterdir()) == []
     assert capsys.readouterr().out == ""
+
+
+def test_default_gateway_uses_existing_domain_route_api(tmp_path, monkeypatch):
+    plan, existing, route_exists = cloud_deploy.inspect_resources(FakeAdmin())
+    verified = {**plan, "function_action": "update_owned", "route_action": "retain_owned"}
+    states = iter([(plan, existing, route_exists), (verified, True, True)])
+    monkeypatch.setattr(cloud_deploy, "inspect_resources", lambda admin: next(states))
+    monkeypatch.setattr(cloud_deploy, "validate_package", lambda path: {"zip_sha256": "abc", "package_bytes": 10})
+    monkeypatch.setattr(cloud_deploy, "extract_package", lambda package, code: None)
+    monkeypatch.setattr(cloud_deploy, "load_private_environment", lambda: {"CLOUDBASE_APIKEY": "withheld-fixture"})
+    monkeypatch.setattr(cloud_deploy, "ARTIFACTS", tmp_path)
+    writes = []
+
+    class SuccessfulDeploy:
+        def capture(self, args, **kwargs):
+            assert args[:2] == ["fn", "deploy"]
+            assert "withheld-fixture" not in " ".join(args)
+            return json.dumps({"success": True, "results": [{"name": cloud_deploy.FUNCTION, "status": "success"}]})
+
+        def api(self, action, body, *, write=False):
+            writes.append((action, body, write))
+            return {}
+
+    result = cloud_deploy.apply_deployment(SuccessfulDeploy(), tmp_path / "api.zip", plan, existing, route_exists)
+    assert writes == [("CreateHTTPServiceRoute", {
+        "EnvId": ENV_ID,
+        "Domain": {"Domain": FakeAdmin.domain, "Routes": [owned_route()]},
+    }, True)]
+    assert result["route_action"] == "retain_owned"
+    assert result["gateway_qps_total"] == 100 and result["gateway_qps_per_ip"] == 5
+    assert "withheld-fixture" not in (tmp_path / "deployment-public.json").read_text()
+
+
+@pytest.mark.parametrize("function_exists", [False, True])
+def test_missing_post_deploy_resources_cannot_publish_success(tmp_path, monkeypatch, function_exists):
+    plan, existing, route_exists = cloud_deploy.inspect_resources(FakeAdmin())
+    states = iter([(plan, existing, route_exists), (plan, function_exists, False)])
+    monkeypatch.setattr(cloud_deploy, "inspect_resources", lambda admin: next(states))
+    monkeypatch.setattr(cloud_deploy, "validate_package", lambda path: {})
+    monkeypatch.setattr(cloud_deploy, "extract_package", lambda package, code: None)
+    monkeypatch.setattr(cloud_deploy, "load_private_environment", lambda: {"CLOUDBASE_APIKEY": "withheld-fixture"})
+    monkeypatch.setattr(cloud_deploy, "ARTIFACTS", tmp_path)
+
+    class EmptyAfterDeploy:
+        def capture(self, args, **kwargs):
+            return json.dumps({"success": True, "results": [{"name": cloud_deploy.FUNCTION, "status": "success"}]})
+
+        def api(self, *args, **kwargs):
+            return {}
+
+    with pytest.raises(AdminError, match="DEPLOYED_RESOURCES_NOT_PRESENT"):
+        cloud_deploy.apply_deployment(EmptyAfterDeploy(), tmp_path / "api.zip", plan, existing, route_exists)
+    assert not (tmp_path / "deployment-public.json").exists()
+    assert list(tmp_path.iterdir()) == []
