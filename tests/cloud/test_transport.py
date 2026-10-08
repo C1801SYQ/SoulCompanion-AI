@@ -171,18 +171,17 @@ class DocumentServer:
         body = json.loads(request.content) if request.content else {}
         if len(suffix) == 3:
             record_id = suffix[2]
-            if request.method == "PATCH":
-                assert body["upsert"] is True and body["replaceMode"] is False
-                records.setdefault(record_id, body["data"]["$setOnInsert"])
-                return httpx.Response(200, json={"matched": 1, "updated": 0})
+            assert request.method == "GET"
             return (
                 httpx.Response(200, json=records[record_id])
                 if record_id in records
                 else httpx.Response(404, json={})
             )
         if request.method == "POST":
+            if any(record["_id"] in records for record in body["data"]):
+                # The actual provider maps duplicate document keys to HTTP 500.
+                return httpx.Response(500, json={"code": "DATABASE_REQUEST_FAILED"})
             for record in body["data"]:
-                assert record["_id"] not in records
                 records[record["_id"]] = record
             return httpx.Response(
                 201, json={"insertedIds": [record["_id"] for record in body["data"]]}
@@ -222,7 +221,23 @@ class DocumentServer:
 def test_cloudbase_repository_concurrent_identity_crud_and_all_owner_filters():
     async def scenario():
         server = DocumentServer()
-        async with httpx.AsyncClient(transport=httpx.MockTransport(server)) as client:
+        first_reads = {COLLECTIONS[kind]: 0 for kind in ("users", "identities")}
+        read_barriers = {kind: asyncio.Event() for kind in first_reads}
+
+        async def concurrent_transport(request):
+            response = server(request)
+            collection = request.url.path.split("/collections/", 1)[1].split("/")[0]
+            if request.method == "GET" and collection in first_reads:
+                first_reads[collection] += 1
+                if first_reads[collection] <= 12:
+                    if first_reads[collection] == 12:
+                        read_barriers[collection].set()
+                    await read_barriers[collection].wait()
+            return response
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(concurrent_transport)
+        ) as client:
             repository = CloudBaseDocumentRepository(CONFIG, client)
             users = await asyncio.gather(
                 *(
@@ -234,6 +249,15 @@ def test_cloudbase_repository_concurrent_identity_crud_and_all_owner_filters():
             assert len({item["id"] for item in users}) == 1
             assert len(server.records[COLLECTIONS["users"]]) == 1
             assert len(server.records[COLLECTIONS["identities"]]) == 1
+            for kind in ("users", "identities"):
+                assert (
+                    sum(
+                        request.method == "POST"
+                        and f"/{COLLECTIONS[kind]}/" in request.url.path
+                        for request in server.requests
+                    )
+                    == 12
+                )
             assert (
                 await repository.update_user(user["id"], {"display_name": "changed"})
             )["display_name"] == "changed"
@@ -389,8 +413,8 @@ def test_repository_rejects_http200_silent_write_failure():
 @pytest.mark.parametrize(
     "acknowledgment",
     [
-        {"matched": 0, "updated": 0},
-        {"matched": 0, "updated": 0, "upsert_id": "wrong-identity"},
+        {"insertedIds": []},
+        {"insertedIds": ["wrong-identity"]},
         {"code": "SILENT_FAILURE"},
     ],
 )
@@ -403,7 +427,7 @@ def test_existing_user_does_not_hide_missing_identity_write(acknowledgment):
 
         def transport(request):
             if (
-                request.method == "PATCH"
+                request.method == "POST"
                 and f"/{COLLECTIONS['identities']}/" in request.url.path
             ):
                 return httpx.Response(200, json=acknowledgment)
@@ -428,27 +452,149 @@ def test_valid_insert_acknowledgment_is_accepted_for_new_identity():
         principal = AppPrincipal("synthetic-new-request", CONFIG.env_id)
         user, identity = identity_records(principal)
 
-        def transport(request):
-            response = server(request)
-            if request.method == "PATCH":
-                return httpx.Response(
-                    200,
-                    json={
-                        "matched": 0,
-                        "updated": 0,
-                        "upsert_id": request.url.path.rsplit("/", 1)[1],
-                    },
-                )
-            return response
-
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(transport)
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(server)) as client:
             assert (
                 await CloudBaseDocumentRepository(CONFIG, client).resolve_user(
                     principal
                 )
             )["id"] == user["id"]
             assert identity["id"] in server.records[COLLECTIONS["identities"]]
+            assert all(request.method in {"GET", "POST"} for request in server.requests)
+
+    run(scenario())
+
+
+def test_partial_user_creation_repairs_identity_without_overwriting_profile():
+    async def scenario():
+        server = DocumentServer()
+        principal = AppPrincipal("synthetic-partial-request", CONFIG.env_id)
+        user, identity = identity_records(principal)
+        user["display_name"] = "existing profile"
+        server.records[COLLECTIONS["users"]][user["id"]] = user.copy()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(server)) as client:
+            resolved = await CloudBaseDocumentRepository(CONFIG, client).resolve_user(
+                principal
+            )
+        assert resolved == user
+        assert (
+            server.records[COLLECTIONS["identities"]][identity["id"]]["user_id"]
+            == user["id"]
+        )
+        inserts = [request for request in server.requests if request.method == "POST"]
+        assert len(inserts) == 1
+        assert f"/{COLLECTIONS['identities']}/" in inserts[0].url.path
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("kind", ["users", "identities"])
+def test_insert_acknowledgment_does_not_replace_canonical_readback(kind):
+    async def scenario():
+        server = DocumentServer()
+        principal = AppPrincipal("synthetic-insert-without-readback", CONFIG.env_id)
+
+        def transport(request):
+            if (
+                request.method == "POST"
+                and f"/{COLLECTIONS[kind]}/" in request.url.path
+            ):
+                record_id = json.loads(request.content)["data"][0]["id"]
+                return httpx.Response(201, json={"insertedIds": [record_id]})
+            return server(request)
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(transport)
+        ) as client:
+            with pytest.raises(CloudError) as error:
+                await CloudBaseDocumentRepository(CONFIG, client).resolve_user(
+                    principal
+                )
+            assert error.value.status == 503
+        assert not server.records[COLLECTIONS[kind]]
+
+    run(scenario())
+
+
+@pytest.mark.parametrize("status", [409, 500])
+def test_unconfirmed_insert_requires_a_matching_canonical_document(status):
+    async def scenario():
+        server = DocumentServer()
+        principal = AppPrincipal("synthetic-unconfirmed-request", CONFIG.env_id)
+
+        def transport(request):
+            if request.method == "POST":
+                return httpx.Response(status, json={"code": "DATABASE_REQUEST_FAILED"})
+            return server(request)
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(transport)
+        ) as client:
+            with pytest.raises(CloudError) as error:
+                await CloudBaseDocumentRepository(CONFIG, client).resolve_user(
+                    principal
+                )
+            assert error.value.status == 503
+        assert not server.records[COLLECTIONS["users"]]
+        assert not server.records[COLLECTIONS["identities"]]
+
+    run(scenario())
+
+
+@pytest.mark.parametrize(
+    "field,unexpected",
+    [
+        ("_id", "different-document"),
+        ("id", "different-identity"),
+        ("issuer", "different-environment"),
+        ("provider", "different-provider"),
+        ("provider_subject", "different-subject"),
+        ("user_id", "different-user"),
+    ],
+)
+def test_identity_collision_never_overwrites_or_authenticates(field, unexpected):
+    async def scenario():
+        server = DocumentServer()
+        principal = AppPrincipal("synthetic-colliding-request", CONFIG.env_id)
+        user, identity = identity_records(principal)
+        identity[field] = unexpected
+        # Storage primary key remains occupied, while the document itself is invalid.
+        identity_id = identity_records(principal)[1]["id"]
+        server.records[COLLECTIONS["identities"]][identity_id] = identity.copy()
+        user["display_name"] = "keep existing profile"
+        server.records[COLLECTIONS["users"]][user["id"]] = user.copy()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(server)) as client:
+            with pytest.raises(CloudError) as error:
+                await CloudBaseDocumentRepository(CONFIG, client).resolve_user(
+                    principal
+                )
+            assert error.value.status == 503
+        assert server.records[COLLECTIONS["identities"]][identity_id] == identity
+        assert server.records[COLLECTIONS["users"]][user["id"]] == user
+        assert not any(request.method == "PATCH" for request in server.requests)
+
+    run(scenario())
+
+
+def test_malformed_insert_acknowledgment_is_not_rescued_by_readback():
+    async def scenario():
+        server = DocumentServer()
+        principal = AppPrincipal("synthetic-bad-ack-request", CONFIG.env_id)
+
+        def transport(request):
+            response = server(request)
+            if request.method == "POST":
+                return httpx.Response(201, json={"insertedIds": ["wrong-record"]})
+            return response
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(transport)
+        ) as client:
+            with pytest.raises(CloudError) as error:
+                await CloudBaseDocumentRepository(CONFIG, client).resolve_user(
+                    principal
+                )
+            assert error.value.status == 503
+        assert len(server.records[COLLECTIONS["users"]]) == 1
+        assert not server.records[COLLECTIONS["identities"]]
 
     run(scenario())

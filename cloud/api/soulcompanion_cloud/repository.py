@@ -199,6 +199,10 @@ def decode_ejson(value: Any) -> Any:
     return value
 
 
+class _UnconfirmedInsert(Exception):
+    """An insert may conflict with a concurrent deterministic-key insert."""
+
+
 class CloudBaseDocumentRepository:
     """Official NoSQL HTTP API with an explicit, server-only API key.
 
@@ -218,6 +222,7 @@ class CloudBaseDocumentRepository:
         params: dict | None = None,
         body: dict | None = None,
         missing_ok: bool = False,
+        confirm_insert_conflict: bool = False,
     ) -> Any:
         if not self.settings.env_id or not self.settings.api_key:
             raise unavailable()
@@ -234,6 +239,10 @@ class CloudBaseDocumentRepository:
             raise unavailable() from None
         if response.status_code == 404 and missing_ok:
             return None
+        if confirm_insert_conflict and response.status_code in {409, 500}:
+            # This provider also reports duplicate primary keys as HTTP 500.
+            # Never treat that response itself as acknowledgment of a write.
+            raise _UnconfirmedInsert()
         if response.status_code not in {200, 201}:
             raise unavailable()
         try:
@@ -318,41 +327,45 @@ class CloudBaseDocumentRepository:
 
     async def resolve_user(self, principal: AppPrincipal) -> dict:
         user, identity = identity_records(principal)
-        verified_identity = await self._find_one(
-            "identities",
-            {
-                "_id": identity["id"],
-                "issuer": principal.issuer,
-                "provider": principal.provider,
-                "provider_subject": principal.subject,
-            },
+        identity_query = {
+            key: identity[key]
+            for key in (
+                "_id",
+                "id",
+                "issuer",
+                "provider",
+                "provider_subject",
+                "user_id",
+            )
+        }
+        # Unique deterministic primary keys make first requests converge without
+        # provider-specific update operators or overwriting existing profile data.
+        existing = await self._ensure_canonical_insert(
+            "users", user, {"_id": user["id"], "id": user["id"]}
         )
-        if verified_identity is not None:
-            if verified_identity.get("user_id") != user["id"]:
-                raise unavailable()
-            existing = await self._find_one(
-                "users", {"_id": user["id"], "id": user["id"]}
-            )
-            if existing is not None:
-                return existing
-        # Deterministic primary keys + atomic set-on-insert make concurrent first
-        # requests and partial retries converge. Existing profile data is untouched.
-        for kind, record in (("users", user), ("identities", identity)):
+        await self._ensure_canonical_insert("identities", identity, identity_query)
+        return existing
+
+    async def _ensure_canonical_insert(
+        self, kind: str, record: dict, immutable_query: dict
+    ) -> dict:
+        existing = await self._find_one(kind, immutable_query)
+        if existing is not None:
+            return existing
+        try:
             response = await self._request(
-                "PATCH",
-                f"{self._documents(kind)}/{record['id']}",
-                body={
-                    "data": {"$setOnInsert": record},
-                    "upsert": True,
-                    "replaceMode": False,
-                },
+                "POST",
+                self._documents(kind),
+                body={"data": [record]},
+                confirm_insert_conflict=True,
             )
-            self._validate_update_acknowledgment(response)
-            if response["matched"] != 1 and response.get("upsert_id") != record["id"]:
-                # An existing User alone cannot authenticate a first request when
-                # its Identity was never acknowledged by the document service.
+            if response.get("insertedIds") != [record["id"]]:
                 raise unavailable()
-        existing = await self._find_one("users", {"_id": user["id"], "id": user["id"]})
+        except _UnconfirmedInsert:
+            # A conflicting insert is valid only when the independently fetched
+            # canonical document matches every immutable identity field below.
+            pass
+        existing = await self._find_one(kind, immutable_query)
         if existing is None:
             raise unavailable()
         return existing
