@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import sys
 import threading
@@ -70,7 +71,17 @@ def main():
     from web.api import app
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port,
                                          proxy_headers=False, log_level="warning"))
-    run_until_stopped(server.run, lambda: setattr(server, "should_exit", True), args.stop_file)
+
+    def run_server():
+        if sys.platform == "win32":
+            # Avoid Proactor socket-reset cleanup leaving the fixture's server
+            # transport attached forever during its graceful shutdown.
+            with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop) as runner:
+                runner.run(server.serve())
+        else:
+            server.run()
+
+    run_until_stopped(run_server, lambda: setattr(server, "should_exit", True), args.stop_file)
 
 
 if __name__ == "__main__":
