@@ -1,7 +1,8 @@
 """Explicit real-cloud acceptance; generated credentials stay in process memory.
 
 The default is a public plan. --apply creates exactly two synthetic development
-users and leaves their archived metadata for an auditable, non-destructive run.
+users, or --reuse-fixtures privately resets the two existing owned test users.
+Runs leave archived metadata for an auditable, non-destructive acceptance.
 No production user, collection, environment, or existing record is deleted.
 """
 
@@ -19,7 +20,7 @@ from uuid import uuid4
 
 import httpx
 
-from cloud_admin import AdminError, CLI_ENTRY, CloudAdmin, ENV_ID, ROOT, parse_response
+from cloud_admin import AdminError, CLI_ENTRY, CloudAdmin, ENV_ID, REGION, ROOT, parse_response
 
 
 API_BASE = (
@@ -36,6 +37,8 @@ PRIVATE_CLI_BOOTSTRAP = (
     "require('node:module').runMain();"
 )
 NAME_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{5,63}\Z")
+FIXTURE_NAME_PATTERN = re.compile(r"scphase04_[a-f0-9]{20}\Z")
+UID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,512}\Z")
 
 
 class AcceptanceError(RuntimeError):
@@ -122,6 +125,85 @@ def create_account(admin: CloudAdmin, account: SyntheticAccount) -> None:
     account.uid = uid
 
 
+def existing_fixture_accounts(admin: CloudAdmin) -> list[SyntheticAccount]:
+    """Select the exact two owned fixtures; the full user list stays private."""
+    admin.preflight()
+    try:
+        output = admin.capture([
+            "user", "list", "--env-id", ENV_ID, "--region", REGION,
+            "--limit", "100", "--offset", "0", "--json",
+        ])
+    except AdminError:
+        raise AcceptanceError("SYNTHETIC_FIXTURE_LIST_UNAVAILABLE") from None
+    clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    try:
+        start, end = clean.index("{"), clean.rindex("}")
+        result = json.loads(clean[start:end + 1])
+        records, meta = result["data"], result["meta"]
+        if not isinstance(records, list) or not isinstance(meta, dict):
+            raise ValueError
+        if (type(meta.get("total")) is not int or meta["total"] != len(records)
+                or len(records) > 100 or type(meta.get("limit")) is not int
+                or meta["limit"] != 100
+                or type(meta.get("offset")) is not int or meta["offset"] != 0):
+            raise ValueError
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise AcceptanceError("SYNTHETIC_FIXTURE_LIST_INVALID") from None
+    selected, seen_uids, seen_names = [], set(), set()
+    for record in records:
+        if not isinstance(record, dict):
+            raise AcceptanceError("SYNTHETIC_FIXTURE_LIST_INVALID")
+        uid, name = record.get("Uid"), record.get("Name")
+        if (not isinstance(uid, str) or not UID_PATTERN.fullmatch(uid)
+                or uid in seen_uids or not isinstance(name, str)):
+            raise AcceptanceError("SYNTHETIC_FIXTURE_LIST_INVALID")
+        seen_uids.add(uid)
+        if not name.startswith("scphase04_"):
+            continue
+        if not FIXTURE_NAME_PATTERN.fullmatch(name) or name in seen_names:
+            raise AcceptanceError("SYNTHETIC_FIXTURE_LIST_INVALID")
+        seen_names.add(name)
+        selected.append((name, uid))
+    if len(selected) != 2:
+        raise AcceptanceError("SYNTHETIC_FIXTURE_COUNT_INVALID")
+    accounts = []
+    # A retains archived metadata while B must remain empty across repeated runs.
+    # Provider listing order must never swap those acceptance roles.
+    for name, uid in sorted(selected):
+        account = new_account()
+        account.username, account.uid = name, uid
+        accounts.append(account)
+    return accounts
+
+
+def reset_fixture_password(admin: CloudAdmin, account: SyntheticAccount) -> None:
+    admin.preflight()
+    if (not FIXTURE_NAME_PATTERN.fullmatch(account.username)
+            or not UID_PATTERN.fullmatch(account.uid)):
+        raise AcceptanceError("SYNTHETIC_FIXTURE_INVALID")
+    if not admin.cli_entry.is_file():
+        raise AcceptanceError("CLI_NOT_INSTALLED")
+    args = [
+        "user", "update", account.uid, "--env-id", ENV_ID, "--region", REGION,
+        "--password", account.password, "--json",
+    ]
+    try:
+        captured = subprocess.run(
+            ["node", "-e", PRIVATE_CLI_BOOTSTRAP],
+            input=json.dumps({"entry": str(admin.cli_entry), "args": args}),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=60, cwd=ROOT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise AcceptanceError("SYNTHETIC_FIXTURE_RESET_UNAVAILABLE") from None
+    try:
+        parse_response(captured.stdout + "\n" + captured.stderr)
+    except AdminError:
+        raise AcceptanceError("SYNTHETIC_FIXTURE_RESET_REJECTED") from None
+    if captured.returncode:
+        raise AcceptanceError("SYNTHETIC_FIXTURE_RESET_INVALID")
+
+
 class PrivateHttp:
     def __init__(self, client, *, sleep=time.sleep, clock=time.monotonic):
         self.client, self.sleep, self.clock = client, sleep, clock
@@ -193,12 +275,22 @@ def login(http: PrivateHttp, account: SyntheticAccount):
         token = data["session"].get("access_token")
     if not isinstance(token, str) or not token or len(token) > 16384 or re.search(r"\s", token):
         raise AcceptanceError("AUTH_RESPONSE_INVALID")
-    verified = payload(require_status(http.request(
-        "GET", CLOUDBASE_BASE + "/auth/v1/token/introspect", token=token,
-    ), 200))
-    require(verified.get("sub") == account.uid and verified.get("client_id") == ENV_ID
-            and verified.get("token_type") == "Bearer", "AUTH_PRINCIPAL_MISMATCH")
+    # Keep an issued token reachable for cleanup even if introspection fails.
     account.token = token
+    try:
+        verified = payload(require_status(http.request(
+            "GET", CLOUDBASE_BASE + "/auth/v1/token/introspect", token=token,
+        ), 200))
+        require(verified.get("sub") == account.uid and verified.get("client_id") == ENV_ID
+                and verified.get("token_type") == "Bearer", "AUTH_PRINCIPAL_MISMATCH")
+    except Exception:
+        try:
+            revoke(http, account)
+        except Exception:
+            # Acceptance.run() makes another bounded cleanup attempt and reports
+            # a failed cleanup without exposing this private provider response.
+            pass
+        raise
 
 
 def revoke(http: PrivateHttp, account: SyntheticAccount):
@@ -241,6 +333,8 @@ class Acceptance:
         self.admin, self.http = admin, http
         self.stage = "preflight"
         self.checks = {}
+        self.accounts = []
+        self.cleanup_failures = 0
 
     def mark(self, name):
         self.checks[name] = True
@@ -251,7 +345,20 @@ class Acceptance:
             body=body, params=params,
         ), status)
 
-    def run(self, *, browser=False):
+    def run(self, *, browser=False, reuse_fixtures=False):
+        try:
+            return self._run(browser=browser, reuse_fixtures=reuse_fixtures)
+        finally:
+            for account in self.accounts:
+                if account.token:
+                    try:
+                        revoke(self.http, account)
+                    except Exception:
+                        # Preserve the failed acceptance stage and still try the
+                        # other account. Only the boolean cleanup result is public.
+                        self.cleanup_failures += 1
+
+    def _run(self, *, browser=False, reuse_fixtures=False):
         self.admin.preflight()
         self.stage = "health_and_anonymous"
         require(payload(self.api("GET", "/healthz")).get("status") == "ok")
@@ -259,9 +366,13 @@ class Acceptance:
         self.api("GET", "/me", status=401)
         self.mark("health_ready_anonymous_denial")
         self.stage = "synthetic_authentication"
-        a, b = new_account(), new_account()
-        create_account(self.admin, a)
-        create_account(self.admin, b)
+        self.accounts = (existing_fixture_accounts(self.admin) if reuse_fixtures
+                         else sorted([new_account(), new_account()],
+                                     key=lambda account: account.username))
+        a, b = self.accounts
+        prepare_account = reset_fixture_password if reuse_fixtures else create_account
+        prepare_account(self.admin, a)
+        prepare_account(self.admin, b)
         login(self.http, a)
         login(self.http, b)
         self.mark("two_official_cloudbase_principals_verified")
@@ -349,7 +460,8 @@ class Acceptance:
             "checks": self.checks, "browser": browser_result,
             "requests": self.http.requests, "rate_limit_retries": self.http.rate_retries,
             "max_request_latency_ms": self.http.max_latency_ms,
-            "fixture": "Two generated synthetic development users; no real personal or media data",
+            "fixture_mode": "reuse" if reuse_fixtures else "create",
+            "fixture": "Two synthetic development users; no real personal or media data",
             "retained": "Synthetic users and application identities; archived profile and ended session metadata",
         }
 
@@ -358,25 +470,33 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--browser", action="store_true")
+    parser.add_argument("--reuse-fixtures", action="store_true")
     args = parser.parse_args()
     if not args.apply:
         print(json.dumps({"status": "plan", "env_id": ENV_ID, "api_base_url": API_BASE,
                           "synthetic_users": 2, "real_calls": False,
+                          "fixture_mode": "reuse" if args.reuse_fixtures else "create",
                           "browser_requested": args.browser, "destructive_operations": []}))
         return 0
     acceptance = None
     try:
         with httpx.Client(follow_redirects=False, trust_env=False) as client:
             acceptance = Acceptance(CloudAdmin(CLI_ENTRY), PrivateHttp(client))
-            result = acceptance.run(browser=args.browser)
+            result = acceptance.run(browser=args.browser, reuse_fixtures=args.reuse_fixtures)
         print(json.dumps(result, sort_keys=True))
         return 0
     except Exception:
         # Exception text and chained contexts may contain request credentials.
         # A fixed stage code is enough to locate a failing acceptance check.
-        print(json.dumps({"status": "failed", "code": "CLOUD_ACCEPTANCE_FAILED",
-                          "stage": acceptance.stage if acceptance else "initialization",
-                          "checks": acceptance.checks if acceptance else {}}))
+        failure = {"status": "failed", "code": "CLOUD_ACCEPTANCE_FAILED",
+                   "stage": acceptance.stage if acceptance else "initialization",
+                   "checks": acceptance.checks if acceptance else {}}
+        if acceptance and acceptance.accounts:
+            failure["api_token_cleanup_verified"] = (
+                acceptance.cleanup_failures == 0
+                and all(not account.token for account in acceptance.accounts)
+            )
+        print(json.dumps(failure))
         return 1
 
 
