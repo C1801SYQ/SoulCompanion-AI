@@ -254,7 +254,7 @@ async function acceptance() {
             const box = await control.boundingBox();
             assert.ok(box && box.width >= 43.5 && box.height >= 43.5, `${id} target below 44px at ${width}px`);
             if (width < 600 && ['session-start', 'session-stop'].includes(id)) {
-              const navigation = await element(page, 'nav-home').boundingBox();
+              const navigation = await element(page, 'nav-community').boundingBox();
               assert.ok(box.y >= 0 && box.y + box.height <= navigation.y, `${id} must fit first screen above mobile navigation at ${width}px`);
             }
             controls.push({ id, ...box });
@@ -399,7 +399,8 @@ async function acceptance() {
     });
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) evidence.api_requests.push(request.url()); });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    // The historical dashboard is now an optional family tool; keep all of its regressions.
+    await page.goto(base + '/#/home', { waitUntil: 'domcontentloaded' });
     if (DEMO_ONLY) {
       await expect(element(page, 'demo-badge')).toBeVisible();
       await expect(element(page, 'connection-status')).toHaveCount(0);
@@ -438,7 +439,7 @@ async function acceptance() {
     await expect(page.getByRole('main')).toHaveCount(1);
     await expect(page.getByRole('navigation', { name: '主要导航' })).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
-    await expect(page.getByRole('button', { name: /首页/ })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: '陪伴看板', exact: true })).toHaveCount(1);
     passed('Actual REAL V1 snapshot renders unavailable live emotion and null confidence; no media permission request');
 
     evidence.visibility_lifecycle = { stimulus: 'Simulated document visibilitychange in actual H5; not an OS-background or lock-screen test' };

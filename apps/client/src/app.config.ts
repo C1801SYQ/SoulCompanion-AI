@@ -1,5 +1,11 @@
 export default defineAppConfig({
   pages: [
+    'pages/community/index',
+    'pages/knowledge/index',
+    'pages/growth/index',
+    'pages/profile/index',
+    'pages/community/detail',
+    'pages/community/compose',
     'pages/home/index',
     'pages/session/index',
     'pages/insights/index',
@@ -7,9 +13,9 @@ export default defineAppConfig({
     'pages/settings/index',
   ],
   window: {
-    navigationBarTitleText: 'SoulCompanion',
-    navigationBarBackgroundColor: '#fafaf7',
+    navigationBarTitleText: '予怀',
+    navigationBarBackgroundColor: '#f8f5ee',
     navigationBarTextStyle: 'black',
-    backgroundColor: '#fafaf7',
+    backgroundColor: '#f8f5ee',
   },
 });

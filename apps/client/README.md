@@ -1,12 +1,14 @@
-# SoulCompanion V2 client
+# 予怀 · shared client
 
-Shared Taro 4 / React / TypeScript client. Phase 02 provides Home, Session,
-Insights, Reports and Settings, with desktop navigation and mobile bottom tabs.
-The previous Web client remains in `web/static/`.
+更新：2026-10-09，范围 PC01。
+
+Taro 4 / React 18 / TypeScript 客户端，微信小程序优先，H5 用于共享界面、开发预览和浏览器测试。PC01 默认入口为社区，主导航为社区、育儿知识、成长记录、我的。服务 0～18 岁儿童家庭，用户为成年家长/监护人。
+
+社区帖子都是明确标注的合成示例。年龄/话题可组合筛选，详情使用页面栈并恢复筛选和滚动。投稿仅当前应用内存预览，刷新/身份变化后清空；不写云端或浏览器存储。真实发布、评论、收藏、审核、知识文章和手动成长记录存储尚未实现。
 
 ## Run and verify
 
-Use Node.js 24 and Python 3.12. From the repository root:
+使用 Node.js 24、Python 3.12，从仓库根目录运行：
 
 ```sh
 npm ci --ignore-scripts
@@ -17,61 +19,30 @@ npm run client:audit
 npm run client:build:h5
 npm run client:test:e2e
 npm run client:test:media
+npm run client:test:community
+npm run client:build:weapp
 ```
 
-The browser checks also require declared Web Python dependencies and Playwright
-Chromium. Set `SOULCOMPANION_PYTHON` to a Python interpreter with
-`requirements-web.txt` installed if `python` is not that interpreter. The runner
-creates an isolated, labelled synthetic database and closes its own servers.
-Evidence is written to ignored `.test-artifacts/v2-client-acceptance/`.
-The media runner uses Chromium's virtual devices, never the developer's physical
-camera or microphone. Its separate evidence is in `.test-artifacts/v2-media-acceptance/`.
+浏览器测试需要 Playwright Chromium。旧 E2E/media 还需要 requirements-web.txt，可通过 SOULCOMPANION_PYTHON 指定解释器；它们创建独立合成数据库和虚拟设备，不使用物理摄像头。社区测试运行独立静态服务器，阻止并检查 API、外部网络、写入、权限和存储请求。证据分别位于忽略的 .test-artifacts/v2-client-acceptance/、v2-media-acceptance/ 和 community-acceptance/。
 
-For development, run `npm --prefix apps/client run dev:h5`. The development server
-binds to loopback. REAL is the default and requires a same-origin backend; there
-is no production proxy or bypass of the preserved V1 local access boundary.
-Changing to DEMO in Settings uses explicit synthetic data and makes no API
-requests. Failed REAL requests remain errors or offline states.
+开发执行 npm --prefix apps/client run dev:h5 并打开 loopback 根 URL。公共社区无需后端或登录；旧真实模式家庭工具需要同源 V1 后端，或明确配置既有 V2 云端。测试旧工具时使用 /#/home，默认根入口现在是社区。
 
-## Public build configuration
+## Configuration and boundaries
 
-- `PUBLIC_API_URL`: API origin, or an explicit `/api/v1` base. Empty means
-  same-origin. It is public build configuration, never a credential.
-- `PUBLIC_DEMO_ONLY=true`: build explicitly synthetic emotion data with REAL disabled.
-  Local camera/microphone preview still works after an explicit Start action.
-  This flag does not turn a local device into a fake device or an inference source.
-- Phase03 builds on Cloudflare Pages (`CF_PAGES=1`) always use synthetic emotion data,
-  even if a dashboard environment variable is missing or set to false. Local builds
-  without this Pages marker still support REAL. The Preview CI job exercises this
-  rule with `CF_PAGES=1` and `PUBLIC_DEMO_ONLY=false`; device Start remains available.
+- PUBLIC_API_URL：Legacy V1 API origin 或 /api/v1 base；为空表示同源。
+- PUBLIC_API_BASE_URL：独立 V2 HTTPS origin，不带 /api/v2；为空关闭云账户。
+- PUBLIC_CLOUDBASE_ENV_ID、PUBLIC_CLOUDBASE_REGION、PUBLIC_WECHAT_APP_ID：公开环境配置，不是凭据。
+- PUBLIC_DEMO_ONLY=true：禁用真实云账户与 Legacy REAL；旧情绪页显示明确合成内容。用户仍可主动开启本地设备预览。
+- CF_PAGES=1：始终强制 DEMO_ONLY。CI 对此构建执行旧 E2E/media 和新社区测试。
 
-Do not put passwords, tokens, signing keys, real records or media in these values
-or the repository. Preferences and client observations stay in memory. An
-explicit Markdown export is user initiated. Web capture does not create files.
-WeChat's recording/encoding APIs can create owned temporary files, which the
-adapter deletes after use; cleanup failure is reported instead of hidden.
+公共路由暂停 CloudStore 私有读取，退出/账户变化清理继续有效。公开作者仅合成昵称，不使用内部 UID/OpenID 或儿童档案。不要将密钥、令牌、真实儿童信息、原始附件或媒体写入代码和产物。
 
-## Scope
+Home、Session、Insights、Reports、Settings 保留原路径，在“成长记录”/“我的”中显式进入。媒体 Start 才申请 Camera/Mic；Stop、导航和后台释放设备，返回不自动重启。原始音视频不上传、不用于伪造 AI 结果。微信临时媒体由既有适配器清理。
 
-Phase03 adds explicit local camera/microphone sessions, bounded JPEG/WebP frames,
-short audio events, microphone input intensity and lifecycle cleanup. Page load
-does not request permissions. Start works without an emotion backend, including
-DEMO_ONLY; audio/video is not uploaded, stored in browser storage or used to
-invent an emotion, transcript or AI response. Stop, navigation and background
-release devices, and returning to the page does not restart capture.
+## Navigation and platforms
 
-The WeChat adapter is checked for TypeScript/platform boundaries in this phase;
-DevTools and physical devices require Phase07 verification. Android reuses the
-Web adapter; this phase adds no APK, Capacitor dependency or native bridge.
-Animation supports the OS reduced-motion preference and in-product switch.
-See `docs/v2/MEDIA_PRIVACY.md` and the Phase03 report for verified evidence and
-the distinction between virtual-browser, Fake and physical-device tests.
+共享 [navigation.ts](src/navigation.ts) 定义四主入口。主切换 reLaunch；详情/投稿 navigateTo/navigateBack；旧家庭工具之间 redirectTo，进入/退出工具使用页面栈。当前沿用 AppShell 自绘主导航，不叠加原生 TabBar，也不将普通详情配置为 Tab 页。
 
-Cloudflare Preview configuration remains root `apps/client`, command
-`npm ci --ignore-scripts && npm run build:h5`, output `dist`, Node.js 24 and
-`PUBLIC_DEMO_ONLY=true`. Pushing Phase03 must not change the production branch.
+Cloudflare Preview 保留根目录 apps/client、命令 npm ci --ignore-scripts && npm run build:h5、输出 dist、Node.js 24 与 DEMO_ONLY，不调整 Production 设置。微信产物 dist-weapp 可供有权限的用户导入 DevTools；DevTools、微信登录及真机设备仍 NOT TESTED。Android APK 和实体机器人不属于 PC01。
 
-Design direction and the original site audit are in `docs/v2/`. Dependencies are
-locked; install lifecycle scripts are disabled. Security exceptions in unused
-Taro scaffolding tools must be tracked in the phase report. Do not run remote
-template initialization commands as part of building this existing client.
+参见 [PC01 产品规格](../../docs/parent-community/01-product-spec.md)、[交付报告](../../docs/parent-community/PC01_DELIVERY_REPORT.md)、[Phase 04](../../docs/v2/PHASE04_DELIVERY_REPORT.md)、[微信人工步骤](../../docs/v2/MANUAL_ACTIONS.md) 和 [媒体隐私](../../docs/v2/MEDIA_PRIVACY.md)。依赖保持锁定，不添加新框架或远端安装脚本。

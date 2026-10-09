@@ -16,7 +16,7 @@ export class CloudStore {
   private unsubscribe: () => void;
   private disposed = false;
   private revision = 0;
-  constructor(readonly auth: AuthAdapter | null, readonly api: CloudApi | null) {
+  constructor(readonly auth: AuthAdapter | null, readonly api: CloudApi | null, private privateReadsEnabled = true) {
     this.state = { enabled: Boolean(auth && api), auth: auth?.getState() ?? { status: 'signed_out', principal: null, epoch: 0, message: '' }, epoch: 0,
       status: auth && api ? 'idle' : 'not_configured', message: '', ...emptyPrivate };
     this.unsubscribe = auth?.subscribeAuthState(() => {
@@ -27,6 +27,14 @@ export class CloudStore {
   }
   getState = (): CloudState => this.state;
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
+  /** Public previews retain identity, but cancel private reads and invalidate late responses. */
+  setPrivateReadsEnabled(enabled: boolean): void {
+    if (this.disposed || this.privateReadsEnabled === enabled) return;
+    this.privateReadsEnabled = enabled;
+    this.invalidate();
+    this.update({ status: this.api ? 'idle' : 'not_configured', message: '' });
+    if (enabled) void this.refresh();
+  }
   private update(patch: Partial<CloudState>): void {
     if (this.disposed) return;
     this.state = Object.freeze({ ...this.state, ...patch });
@@ -49,7 +57,7 @@ export class CloudStore {
     this.update({ status: result.kind === 'offline' ? 'offline' : 'error', message: result.message });
   }
   async refresh(): Promise<void> {
-    if (!this.api || this.auth?.getState().status !== 'signed_in') return;
+    if (!this.privateReadsEnabled || !this.api || this.auth?.getState().status !== 'signed_in') return;
     this.invalidate();
     const revision = this.revision;
     const previousSelection = this.state.selectedId;
@@ -72,7 +80,7 @@ export class CloudStore {
     if (id) void this.refreshSelected(this.revision, id);
   }
   private async refreshSelected(revision: number, id: string): Promise<void> {
-    if (!this.api) return;
+    if (!this.privateReadsEnabled || !this.api) return;
     try {
       const [sessions, emotions, reports] = await Promise.all([
         this.request(this.api.sessions(id)), this.request(this.api.emotions(id)), this.request(this.api.reports(id)),
@@ -82,6 +90,7 @@ export class CloudStore {
     } catch (error) { this.failure(error, revision); }
   }
   private async mutate(operation: () => RequestHandle<unknown>): Promise<void> {
+    if (!this.privateReadsEnabled) throw new CloudError('forbidden');
     if (!this.api || this.auth?.getState().status !== 'signed_in') return;
     const revision = this.revision;
     this.update({ status: 'loading', message: '' });

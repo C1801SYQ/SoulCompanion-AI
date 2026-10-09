@@ -26,6 +26,36 @@ function api() {
   return { value, setProfiles: (next: ChildProfile[]) => { profiles = next; } };
 }
 async function setup() { const auth = new FakeAuthAdapter(); const mock = api(); const store = new CloudStore(auth, mock.value); await auth.signIn(); await tick(); return { auth, mock, store }; }
+describe('public preview does not read private family data', () => {
+  it('can pause before sign-in without changing auth or writing data', async () => {
+    const auth = new FakeAuthAdapter(); const mock = api(); const store = new CloudStore(auth, mock.value);
+    store.setPrivateReadsEnabled(false);
+    await auth.signIn(); await tick(); await store.refresh();
+    expect(store.getState().auth.status).toBe('signed_in');
+    expect(mock.value.me).not.toHaveBeenCalled(); expect(mock.value.children).not.toHaveBeenCalled();
+    store.setPrivateReadsEnabled(true); await tick();
+    expect(mock.value.me).toHaveBeenCalledTimes(1); expect(mock.value.children).toHaveBeenCalledTimes(1);
+  });
+  it('cancels pending reads and ignores late results on public entry', async () => {
+    const { auth, mock, store } = await setup();
+    const pending = deferred<{ items: ChildProfile[]; total: number; limit: number; offset: number }>();
+    mock.value.children = vi.fn(() => pending.handle);
+    const read = store.refresh(); await tick();
+    store.setPrivateReadsEnabled(false);
+    expect(pending.handle.cancel).toHaveBeenCalled();
+    pending.resolve({ items: [profile], total: 1, limit: 100, offset: 0 }); await read;
+    expect(store.getState().profiles).toEqual([]);
+    await auth.signOut(); expect(store.getState()).toMatchObject({ user: null, profiles: [], selectedId: null });
+  });
+  it('prevents selected-record reads in public scope and still clears changed identities', async () => {
+    const { auth, mock, store } = await setup(); mock.setProfiles([profile]); await store.refresh();
+    store.setPrivateReadsEnabled(false); store.selectProfile(id); await tick();
+    expect(mock.value.sessions).not.toHaveBeenCalled(); expect(mock.value.emotions).not.toHaveBeenCalled(); expect(mock.value.reports).not.toHaveBeenCalled();
+    auth.setAccount('other-synthetic-parent', 'other-synthetic-token'); await tick();
+    expect(store.getState()).toMatchObject({ user: null, profiles: [], selectedId: null });
+    expect(mock.value.children).toHaveBeenCalledTimes(2);
+  });
+});
 describe('private cloud state ownership epochs', () => {
   it('unconfigured cloud neither authenticates nor requests and remains local-only', async () => { const store = new CloudStore(null, null); await store.refresh(); expect(store.getState()).toMatchObject({ enabled: false, status: 'not_configured', user: null, profiles: [], selectedId: null }); });
   it('signed-in empty profile state stays explicit and never auto-selects', async () => { const { mock, store } = await setup(); expect(store.getState()).toMatchObject({ status: 'ready', profiles: [], selectedId: null }); mock.setProfiles([profile]); await store.refresh(); expect(store.getState().profiles).toEqual([profile]); expect(store.getState().selectedId).toBeNull(); });

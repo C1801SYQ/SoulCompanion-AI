@@ -13,7 +13,7 @@ export function CloudProvider({ children, injectedStore }: { children: ReactNode
     const config = cloudConfig();
     if (!config.enabled) return new CloudStore(null, null);
     const auth = createCloudAuthAdapter(config);
-    return new CloudStore(auth, createCloudApi(new CloudApiTransport(config.apiBaseUrl, auth)));
+    return new CloudStore(auth, createCloudApi(new CloudApiTransport(config.apiBaseUrl, auth)), false);
   });
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   useEffect(() => () => store.dispose(), [store]);

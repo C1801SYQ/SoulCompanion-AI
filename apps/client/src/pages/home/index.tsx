@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import Taro from '@tarojs/taro';
+import { openTool } from '../../navigation';
 import { Text, View } from '@tarojs/components';
 import { AppShell } from '../../components/AppShell';
 import { withClientErrorBoundary } from '../../components/ClientErrorBoundary';
@@ -17,7 +17,7 @@ function HomePage() {
   const history = useResource(`home:history:${source}`, () => api.getHistory({ days: 1, limit: 3, offset: 0 }), 30000);
   const report = useResource(`home:report:${source}`, () => api.getReport(1), 60000);
   function go(page: 'session' | 'insights' | 'reports') {
-    void Taro.reLaunch({ url: `/pages/${page}/index` }).catch(() => setNavigationError('页面暂时无法打开，请稍后重试。'));
+    void openTool(page).catch(() => setNavigationError('页面暂时无法打开，请稍后重试。'));
   }
   const emotion = snapshot.status === 'ready' && snapshot.data?.data_available ? snapshot.data.emotion : null;
   return <AppShell page="home">

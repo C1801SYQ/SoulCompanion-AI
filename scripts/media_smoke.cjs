@@ -57,7 +57,7 @@ function allowedRequest(request, origin, staticPaths) {
   if (url.search || url.hash) return false;
   let pathname;
   try { pathname = decodeURIComponent(url.pathname); } catch { return false; }
-  return staticPaths.has(pathname) || ['/', '/home', '/session', '/insights', '/reports', '/settings'].includes(pathname);
+  return staticPaths.has(pathname) || ['/', '/community', '/knowledge', '/growth', '/profile', '/home', '/session', '/insights', '/reports', '/settings'].includes(pathname);
 }
 
 async function freePort() {
@@ -307,7 +307,7 @@ async function acceptance() {
       if (!['GET', 'HEAD'].includes(request.method())) mutations.push({ method: request.method(), url: request.url() });
       if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url());
     });
-    await page.goto(`http://127.0.0.1:${previewPort}/home`);
+    await page.goto(`http://127.0.0.1:${previewPort}/#/home`);
     if (DEMO_ONLY) await expect(element(page, 'demo-badge')).toBeVisible();
     else {
       await expect(element(page, 'connection-status')).toContainText('已连接', { timeout: 15000 });
@@ -366,7 +366,7 @@ async function acceptance() {
         const box = await element(page, id).boundingBox();
         assert.ok(box && box.width >= 43.5 && box.height >= 43.5, `${id} below 44px at ${width}`);
         if (width < 600 && ['session-start', 'session-stop'].includes(id)) {
-          const nav = await element(page, 'nav-home').boundingBox();
+          const nav = await element(page, 'nav-community').boundingBox();
           assert.ok(box.y >= 0 && box.y + box.height <= nav.y, `${id} below mobile first screen at ${width}`);
         }
       }
@@ -418,6 +418,21 @@ async function acceptance() {
     await expect(element(page, 'camera-status')).toContainText('Camera OFF');
     await released(page);
     passed('Navigation away releases native hardware; Home Start only navigates and never automatically opens devices');
+
+    await active(page);
+    const beforeCommunity = (await probeState(page)).requests.length;
+    await element(page, 'nav-community').click();
+    await expect(element(page, 'community-preview-badge')).toBeVisible();
+    await expect.poll(async () => (await probeState(page)).tracks.every(track => track.state === 'ended')).toBe(true);
+    const onCommunity = await probeState(page);
+    assert.ok(onCommunity.contexts.every(context => context.state === 'closed'));
+    assert.equal(onCommunity.attachedVideos, 0);
+    assert.equal(onCommunity.requests.length, beforeCommunity, 'Community cannot acquire replacement media');
+    await element(page, 'nav-growth').click();
+    await element(page, 'pc-tool-session').click();
+    await released(page);
+    await expect(element(page, 'camera-status')).toContainText('Camera OFF');
+    passed('Active media → community releases tracks/contexts/preview; returning via Growth does not restart capture');
 
     for (const mode of ['denied', 'missing']) {
       await page.evaluate(value => { window.__scMediaProbe.mode = value; }, mode);

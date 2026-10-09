@@ -104,6 +104,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run client:test:e2e
       - run: npm run client:test:media
+      - run: npm run client:test:community
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -112,6 +113,7 @@ jobs:
             apps/client/dist
             .test-artifacts/v2-client-acceptance
             .test-artifacts/v2-media-acceptance
+            .test-artifacts/community-acceptance
             .test-artifacts/client-dependency-audit.json
             .test-artifacts/client-dependency-policy.json
   client-h5-preview:
@@ -136,6 +138,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run client:test:e2e -- --demo-only
       - run: npm run client:test:media -- --demo-only
+      - run: npm run client:test:community -- --demo-only
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -144,6 +147,7 @@ jobs:
             apps/client/dist
             .test-artifacts/v2-client-acceptance
             .test-artifacts/v2-media-acceptance
+            .test-artifacts/community-acceptance
   cloud-metadata-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10

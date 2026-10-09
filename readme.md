@@ -1,24 +1,28 @@
-# 小予 · SoulCompanion AI
+# 予怀 · SoulCompanion AI
 
-更新：2026-10-08。当前开发分支：`04-cloud-backend`；开发成果尚未合并到 `master`。
+更新：2026-10-09。当前开发分支：`pc-01-community-prototype`；开发成果尚未合并到 `master`。
 
-SoulCompanion V2 面向 ASD 儿童情绪陪伴场景，采用共享客户端、云端账户与元数据服务、终端本地摄像头和麦克风采集的架构。Phase 01～04 已完成对应软件开发与自动验收：Phase 04 的 CloudBase 实际部署、API 和 H5 官方 SDK 验收均通过。当前云端保存账户、儿童档案和会话元数据；**V2 媒体上传、AI 推理和 Android APK 尚未实现**。
+予怀面向 **0～18 岁儿童家庭**，由成年家长和监护人使用，帮助交流育儿经验、理解孩子与改善亲子沟通。微信小程序是优先平台，H5 用于共享界面、开发预览与浏览器测试。默认首页为家长社区，浏览不要求诊断标签、购买机器人、订阅或先建儿童档案。
 
-本项目是陪伴与研究辅助软件，不提供临床诊断或疗效判断。实际微信开发者工具和手机真机仍待验证。完整结果与限制见 [Phase 04 交付报告](docs/v2/PHASE04_DELIVERY_REPORT.md)。
+**PC01 是可操作的社区产品原型：列表和详情均为明确标注的合成示例，投稿仅内存预览，不会发布到社区。真实社区发布、互动和内容审核尚未实现。** 育儿知识与手动成长记录展示尚未接入的空状态；旧陪伴、洞察和情绪报告作为可选家庭工具保留。
+
+Phase 01～04 的共享客户端、终端媒体采集及 CloudBase 云后端成果继续沿用。Phase 04 已完成实际部署、API 和 H5 官方 SDK 验收，云端保存账户、私有儿童档案及会话元数据；PC01 没有新增云资源。**V2 媒体上传、AI 推理和 Android APK 尚未实现，实体机器人暂停。**
+
+本项目不提供临床诊断或疗效判断，也不把商业计划中的技术、专家合作和财务陈述当作已实现能力。微信开发者工具和手机真机仍待验证。当前交付见 [PC01 报告](docs/parent-community/PC01_DELIVERY_REPORT.md)，云端历史证据见 [Phase 04 报告](docs/v2/PHASE04_DELIVERY_REPORT.md)。
 
 ## 平台与技术栈
 
 | 平台 / 层 | 当前实现 | 验证范围 |
 | --- | --- | --- |
-| Web / 桌面浏览器 | Taro 4 + React 18 + TypeScript，共享五页 H5 界面 | 构建、响应式布局、本地回归及真实云端 H5 自动验收通过 |
+| Web / 桌面浏览器 | Taro 4 + React 18 + TypeScript，四个家长入口与保留的家庭工具 | PC01 验证结果见交付报告；历史真实云端 H5 验收保留 |
 | 手机 Web | 同一 H5 客户端，移动底部导航与触控布局 | 浏览器移动视口回归通过；不代表所有手机浏览器和实体设备均已验收 |
-| 微信小程序 | Taro 微信构建、媒体适配器和官方 CloudBase 微信登录适配器 | 实际配置构建通过；DevTools、真机登录和设备权限仍 NOT TESTED |
+| 微信小程序 | Taro 微信构建、媒体适配器和官方 CloudBase 微信登录适配器 | PC01 编译通过，Phase 04 历史实际配置编译通过；DevTools、真机登录和设备权限仍 NOT TESTED |
 | Android | 规划复用客户端与 Web 媒体适配器 | 尚无 APK、原生封装或 Android 实机验收 |
 | 静态托管 | Cloudflare Pages 托管 H5 | 公开页面保持 `DEMO_ONLY`，不接入真实云端账户或数据 |
 | 云后端 | CloudBase HTTP 云函数 + 独立 FastAPI `/api/v2` | 实际部署、健康检查、元数据业务和用户隔离验收通过 |
 | 认证与存储 | 官方 CloudBase Auth SDK + CloudBase 文档数据库 | 真实双账户 Web 认证、所有权隔离及数据库直连拒绝通过 |
 
-客户端位于 [apps/client](apps/client/)，云 API 位于 [cloud/api](cloud/api/)。Home、Session、Insights、Reports、Settings 使用共享设计系统。V1 本机看板、SQLite、研究模型和机器人代码继续保留，见下方 Legacy 小节。
+客户端位于 [apps/client](apps/client/)，云 API 位于 [cloud/api](cloud/api/)。社区、育儿知识、成长记录、我的共用现有设计系统；Home、Session、Insights、Reports、Settings 保留原路径。V1 本机看板、SQLite、研究模型和机器人代码继续保留，见下方 Legacy 小节。
 
 ## V2 当前架构
 
@@ -28,18 +32,20 @@ flowchart TB
   H5 --> Client["共享 Taro + React + TypeScript 客户端"]
   WeChat["微信小程序 · 人工验收待完成"] --> Client
   Android["Android · 规划"] -.-> Client
-  Client --> Local["用户主动 Start / End · 终端媒体适配器"]
+  Client --> Community["默认家长社区 · 合成示例 / 内存投稿预览"]
+  Client --> Tools["显式进入可选家庭工具"]
+  Tools --> Local["用户主动 Start / End · 终端媒体适配器"]
   Devices["终端摄像头 / 麦克风"] --> Local
   Local --> Preview["本地预览 / 有界采样 / 资源释放"]
-  Client -->|"已配置的真实开发构建"| Auth["官方 CloudBase Auth"]
-  Client -->|"HTTPS · Bearer"| API["HTTP Gateway → FastAPI /api/v2"]
+  Tools -->|"已配置的真实开发构建"| Auth["官方 CloudBase Auth"]
+  Tools -->|"HTTPS · Bearer"| API["HTTP Gateway → FastAPI /api/v2"]
   API --> Verify["在线身份校验 / 应用用户映射"]
   Verify --> Auth
   API --> Ownership["服务端 owner 检查"]
   Ownership --> DB["CloudBase 文档数据库 · ADMINONLY"]
 ```
 
-图中云端路径用于显式配置的真实开发构建；公开 Cloudflare DEMO 构建不初始化云认证、不请求云端私有数据。本地媒体只用于预览和采样，当前没有媒体上传或推理链路。
+图中云端路径用于显式进入家庭工具的真实开发构建。社区等公共页面暂停私有读取，不申请摄像头/麦克风、不读儿童档案/报告、不调用社区写入 API。公开 Cloudflare DEMO 构建不初始化云认证、不请求私有数据。本地媒体只用于预览和采样，没有上传或推理链路。
 
 ### 云端身份、数据库与数据隔离
 
@@ -61,7 +67,9 @@ flowchart TB
 
 已完成：
 
-- 共享五页客户端、桌面/移动导航、响应式布局、减少动态效果设置、明确 DEMO 与错误/离线状态。
+- 四个主入口、六个年龄段与七类话题组合筛选、示例帖子详情、返回状态恢复和纯文本投稿预览；示例内容始终明确标注。
+- 米黄/柔灰的共享界面、桌面/移动导航和可访问控件；育儿知识、手动成长记录与未来公开社区身份有真实的未接入说明。
+- 保留五个旧家庭工具、减少动态效果设置、DEMO 与错误/离线状态；公共路由暂停私有请求，账户切换继续清理私有数据和内存草稿。
 - 用户主动开启的本地摄像头/麦克风会话、预览/采样及生命周期清理。
 - CloudBase Web 登录/退出、用户昵称、儿童档案新增/修改/选择/归档。
 - 云会话元数据创建、读取、列表和幂等结束；用户数据隔离与匿名拒绝。
@@ -69,7 +77,7 @@ flowchart TB
 
 当前未实现或未验证：
 
-- **未实现：V2 云端媒体上传、实时情绪推理链路、新 AI 推理服务、Android APK。** 情绪记录和报告接口当前只读，真实空数据不会生成结论。
+- **未实现：真实社区发布/审核/互动、来源核对的知识文章、手动成长记录存储、V2 媒体上传、AI 推理与 Android APK。** 情绪记录和报告接口只读，真实空数据不会生成结论。
 - **待人工验证：微信 DevTools、手机微信登录、权限与实体设备行为。** 构建成功和浏览器虚拟设备测试不能替代真机验证。
 - 尚未发布真实云账户的公开生产客户端，未迁移本地 SQLite 数据，未合并 `master`。
 
@@ -86,7 +94,18 @@ flowchart TB
 | Phase 09 | `09-cloud-release` · 云端发布 | 规划，未开始 |
 | Phase 10 | `10-release-candidate` · 候选发布版本 | 规划，未开始 |
 
-编号路线来自 [Phase 01 记录](docs/v2/01-product-baseline.md)。Phase 05～10 是规划主题，不表示分支、服务或安装包已交付；本轮停在 Phase 04。
+上述 Phase 编号来自 [Phase 01 记录](docs/v2/01-product-baseline.md)，Phase 05～10 是历史规划，均未开始；当前产品优先级采用下面的家长社区路线。本轮仅完成 PC01，不启动 PC02。
+
+| 社区路线 | 主题 | 状态 |
+| --- | --- | --- |
+| PC01 | 家长社区产品重定位与可视原型 | 当前交付；真实发布与审核未实现 |
+| PC02 | 微信身份与家庭资料 | 规划 |
+| PC03 | 社区数据库与审核后端 | 规划 |
+| PC04 | 真实社区与运营闭环 | 规划 |
+| PC05 | 育儿知识与私有成长记录 | 规划 |
+| PC06 | 真机与受控体验版交付 | 规划 |
+
+完整边界见 [路线](docs/parent-community/00-roadmap.md) 与 [产品规格](docs/parent-community/01-product-spec.md)。
 
 ## 快速启动
 
@@ -95,7 +114,7 @@ flowchart TB
 ### 1. 获取当前开发分支并安装依赖
 
 ```powershell
-git clone --branch 04-cloud-backend https://github.com/C1801SYQ/SoulCompanion-AI.git
+git clone --branch pc-01-community-prototype https://github.com/C1801SYQ/SoulCompanion-AI.git
 cd SoulCompanion-AI
 python -m venv .venv
 & ./.venv/Scripts/python.exe -m pip install -r requirements-web.txt -r requirements-dev.txt -r cloud/api/requirements-cloud.txt
@@ -112,7 +131,7 @@ $env:PUBLIC_DEMO_ONLY = 'true'
 npm --prefix apps/client run dev:h5
 ```
 
-打开 [本地 H5](http://127.0.0.1:5173/#/home)。情绪/报告使用明确标注的合成数据，云账户关闭；摄像头和麦克风仍需用户主动 Start。浏览器需要支持媒体 API，实际设备权限由浏览器和系统控制。
+打开 [本地 H5 社区](http://127.0.0.1:5173/)。默认可浏览合成帖子、年龄/话题筛选、详情和投稿预览，无需登录。通过“成长记录”进入旧家庭工具后，情绪/报告为 DEMO 合成数据，设备仍需用户主动 Start。浏览器与系统控制实际设备权限。
 
 ### 3. 真实 CloudBase 元数据开发预览
 
@@ -129,7 +148,7 @@ npm run client:build:h5
 & ./.venv/Scripts/python.exe -m http.server 18404 --bind 127.0.0.1 --directory apps/client/dist
 ```
 
-打开 [本地云端开发预览](http://127.0.0.1:18404/#/home)，在云账户页面使用自己有权限的 CloudBase 账户登录。该预览连接真实开发环境；情绪与报告的云端空状态仍是空状态，不会启动 AI 推理。
+打开 [本地开发预览](http://127.0.0.1:18404/)，社区仍只展示合成示例。通过“我的”显式进入账户与私有档案后，使用自己有权限的 CloudBase 账户登录；只有家庭工具连接既有开发环境。情绪/报告空状态不会启动 AI 推理。
 
 `PUBLIC_API_BASE_URL` 是 HTTPS **origin，不带 `/api/v2`**；客户端自行附加 V2 路径。目前云端 CORS 精确允许 `http://127.0.0.1:18404`，不能把 5173、localhost 或新的公开域名当作同一个 origin。更改允许来源须按部署文档处理；以上清除 `CF_PAGES` 仅影响当前终端，不修改公开站点。
 
@@ -177,12 +196,15 @@ npm run lint
 # 为隔离的浏览器回归构建真实模式客户端，清除此前的 DEMO/云端构建选项
 $env:PUBLIC_DEMO_ONLY = 'false'
 $env:PUBLIC_API_BASE_URL = ''
+$env:PUBLIC_API_URL = ''
 Remove-Item Env:CF_PAGES -ErrorAction SilentlyContinue
 npm run client:build:h5
 npx playwright install chromium
 $env:SOULCOMPANION_PYTHON = (Resolve-Path ./.venv/Scripts/python.exe).Path
 npm run client:test:e2e
 npm run client:test:media
+npm run client:test:community
+npm run client:build:weapp
 git diff --check
 ```
 
@@ -190,7 +212,9 @@ git diff --check
 
 仅检查云 API 与工具：`python -m pytest tests/cloud tests/cloud_tools -q`（使用上面安装依赖的解释器）。真实云端验收是另行授权的显式操作，会重置两个已有合成测试账户的密码并写入合成元数据；先阅读部署文档，默认计划模式不调用云端，不把它放入普通无凭据 CI。
 
-Phase 04 交付时已验证 Python **513** 项、客户端 **241** 项、连续三次 H5 E2E、14 组 media、真实 API **11** 项和 SDK 浏览器 **12** 项；功能与文档交付的九项 CI 均通过。详细快照见交付报告和 [已验证的交付 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37745126455)。依赖审计策略通过不等于没有漏洞，继承风险在报告中记录。
+社区脚本独立验证交互、响应式布局、网络/存储/设备边界，证据位于忽略的 `.test-artifacts/community-acceptance/`；微信构建成功不等于真机通过。PC01 当前数量与结果见交付报告。
+
+历史 Phase 04 验证包括 Python **513** 项、客户端 **241** 项、三次 H5 E2E、14 组 media、真实 API **11** 项和 SDK 浏览器 **12** 项；当时九项 CI 均通过，见 [历史 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37745126455)。依赖审计策略通过不等于没有漏洞，继承风险保留。
 
 ## 部署与文档入口
 
@@ -200,12 +224,15 @@ FastAPI V2 已部署为既有 CloudBase 环境中的 `sc-v2-api` HTTP 云函数�
 
 | 文档 | 用途 |
 | --- | --- |
+| [PC01 基线审计](docs/parent-community/PC01_BASELINE_AUDIT.md) | Git、前端、导航、认证、媒体与测试基线 |
+| [家长社区路线](docs/parent-community/00-roadmap.md) / [产品规格](docs/parent-community/01-product-spec.md) | PC01～06 与当前产品/数据边界 |
+| [PC01 交付报告](docs/parent-community/PC01_DELIVERY_REPORT.md) | 原型、自动测试、平台限制及提交回执 |
 | [Phase 04 交付报告](docs/v2/PHASE04_DELIVERY_REPORT.md) | 31 项结果、端点、真实证据、用量与限制 |
 | [CloudBase 部署](docs/v2/CLOUDBASE_DEPLOY.md) | 审计、schema、打包、受控部署和真实验收 |
 | [微信人工操作](docs/v2/MANUAL_ACTIONS.md) | DevTools/真机、合法域名、key 轮换 |
 | [云端隐私](docs/v2/CLOUD_PRIVACY.md) / [媒体隐私](docs/v2/MEDIA_PRIVACY.md) | 用户隔离与终端采集边界 |
 | [Phase 01](docs/v2/01-product-baseline.md) / [Phase 02](docs/v2/02-cross-platform-ui.md) / [Phase 03](docs/v2/03-device-media-capture.md) | 保留基线、UI 和媒体阶段记录 |
-| [客户端基础说明](apps/client/README.md) | Phase 02/03 的开发、构建与平台说明；Phase 04 状态以本 README 和交付报告为准 |
+| [客户端说明](apps/client/README.md) | PC01 入口、运行配置、测试与保留的家庭工具 |
 | [Legacy 部署](DEPLOY.md) / [旧 Cloudflare 静态演示](docs/Cloudflare部署指南.md) | V1 单机产品与旧合成站的历史运行方案 |
 
 ## Legacy / Research Prototype

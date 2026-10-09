@@ -42,6 +42,12 @@ export default defineConfig<'vite'>({
     router: {
       mode: 'hash',
       customRoutes: {
+        '/pages/community/index': '/community',
+        '/pages/knowledge/index': '/knowledge',
+        '/pages/growth/index': '/growth',
+        '/pages/profile/index': '/profile',
+        '/pages/community/detail': '/community/detail',
+        '/pages/community/compose': '/community/compose',
         '/pages/home/index': '/home',
         '/pages/session/index': '/session',
         '/pages/insights/index': '/insights',
