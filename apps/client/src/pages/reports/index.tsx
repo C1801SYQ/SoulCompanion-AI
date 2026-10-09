@@ -10,7 +10,7 @@ import { useCompanion } from '../../state/AppProvider';
 import { CloudRecords } from '../../components/CloudRecords';
 
 function ReportNotes({ items, empty }: { items: string[]; empty: string }) {
-  return items.length ? <View className="sc-report-notes">{items.map((item, index) => <View className="sc-report-note" key={`${index}-${item}`}><Text className="sc-report-note-number">{String(index + 1).padStart(2, '0')}</Text><Text>{item}</Text></View>)}</View> : <Text className="sc-body-muted">{empty}</Text>;
+  return items.length ? <View className="sc-report-notes">{items.map((item, index) => <View className="sc-report-note" key={`${index}-${item}`}><Text className="sc-report-note-number">{String(index + 1).padStart(2, '0')}</Text><Text className="sc-report-note-text">{item}</Text></View>)}</View> : <Text className="sc-body-muted">{empty}</Text>;
 }
 
 function ReportsPage() {

@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build:h5": "taro build --type h5",
-    "build:weapp": "taro build --type weapp",
+    "build:weapp": "taro build --type weapp && node ../../scripts/test_weapp_wxss.cjs && node ../../scripts/check_weapp_wxss.cjs",
     "dev:h5": "taro build --type h5 --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --maxWorkers=1"

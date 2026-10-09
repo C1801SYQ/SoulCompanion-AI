@@ -89,7 +89,7 @@
   .pc-shell .sc-status { white-space: normal; max-width: 75%; font-size: .75em; }
   .pc-shell .sc-main { padding-top: 24px; padding-bottom: 28px; }
   .pc-shell .sc-page-header { flex-direction: column; gap: 16px; }
-  .pc-shell .sc-page-header > :last-child.pc-action { width: 100%; }
+  .pc-shell .sc-page-header > .pc-action:last-child { width: 100%; }
   .pc-shell .sc-page-description { font-size: .9375em; }
   .pc-shell .sc-footer { padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
   .pc-preview-note { margin-bottom: 20px; padding: 14px 16px; }

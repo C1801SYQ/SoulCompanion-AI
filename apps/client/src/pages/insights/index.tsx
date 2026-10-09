@@ -36,7 +36,7 @@ function InsightsPage() {
         </> : <EmptyState title="等待情绪的第一条轨迹" detail={analytics.status === 'ready' ? '这个时间范围还没有记录，换个范围看看，或从一次陪伴开始。' : '连接恢复后，我们会显示这个范围内的真实记录。'} />}
       </SectionCard>
       <SectionCard title="感受的不同侧面" eyebrow="情绪类别分布">
-        {meaningful && counts.length ? <View className="sc-distribution">{counts.map(([category, count]) => <View key={category} className="sc-distribution-row"><View className="sc-distribution-heading"><Text>{emotionLabel(category)}</Text><Text>{count} 条 · {Math.round(count / total * 100)}%</Text></View><View className="sc-distribution-track" ariaHidden><View style={{ width: `${count / total * 100}%` }} /></View></View>)}</View> : <EmptyState compact title="尚无类别分布" detail="有了有效情绪记录后，分布会在这里呈现。" />}
+        {meaningful && counts.length ? <View className="sc-distribution">{counts.map(([category, count]) => <View key={category} className="sc-distribution-row"><View className="sc-distribution-heading"><Text>{emotionLabel(category)}</Text><Text className="sc-distribution-value">{count} 条 · {Math.round(count / total * 100)}%</Text></View><View className="sc-distribution-track" ariaHidden><View style={{ width: `${count / total * 100}%` }} /></View></View>)}</View> : <EmptyState compact title="尚无类别分布" detail="有了有效情绪记录后，分布会在这里呈现。" />}
       </SectionCard>
     </View>
     <SectionCard title="情绪记录" eyebrow="每一个被看见的片刻" className="sc-history-card">

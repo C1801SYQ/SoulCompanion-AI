@@ -16,6 +16,7 @@
     "client:test:media": "node scripts/media_smoke.cjs",
     "client:test:community": "node scripts/test_community_smoke.cjs && node scripts/community_smoke.cjs",
     "client:build:weapp": "npm --prefix apps/client run build:weapp",
+    "client:check:wxss": "node scripts/test_weapp_wxss.cjs && node scripts/check_weapp_wxss.cjs",
     "cloud:test": "python -m pytest tests/cloud tests/cloud_tools -q -p no:cacheprovider",
     "cloud:plan": "python scripts/cloud_schema.py",
     "cloud:package": "python scripts/cloud_package.py"

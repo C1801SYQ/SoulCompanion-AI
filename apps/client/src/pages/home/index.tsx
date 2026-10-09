@@ -32,7 +32,7 @@ function HomePage() {
         {report.status === 'ready' && report.data && <>
           <View className="sc-daily-metric"><Metric label="今日情绪记录" value={String(report.data.interaction_count)} detail={source === 'demo' ? '合成示例记录' : '有效情绪观察条数'} /></View>
           {report.data.data_available ? <Text className="sc-summary-text">{report.data.summary}</Text> : <Text className="sc-summary-text">今天还没有情绪记录。不必着急，我们从一次陪伴开始。</Text>}
-          <View className="sc-soft-note"><Text>小提醒</Text><Text>不需要急着改变情绪，给感受一点被听见的时间。</Text></View>
+          <View className="sc-soft-note"><Text className="sc-soft-note-title">小提醒</Text><Text>不需要急着改变情绪，给感受一点被听见的时间。</Text></View>
         </>}
       </SectionCard>
     </View>
