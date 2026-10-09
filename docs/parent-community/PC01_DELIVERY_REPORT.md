@@ -6,7 +6,7 @@
 
 | 交付项 | 状态 |
 | --- | --- |
-| 社区可视原型 | PASS（本地软件验收；提交和 CI 回执见末节） |
+| 社区可视原型 | PASS（本地软件与 GitHub Actions 验收；提交回执见末节） |
 | 真实社区发布 | NOT IMPLEMENTED |
 | 真实内容审核 | NOT IMPLEMENTED |
 | 微信真机 | NOT TESTED |
@@ -83,7 +83,7 @@ Session 仍需主动 Start。离开媒体页保持原 hide/unmount 清理，不�
 | `npm test` / `npm run test:demo` / `npm run lint` | PASS，38 DOM / 44 DEMO 检查及脚本语法检查 |
 | `git diff --check` | PASS |
 | CF_PAGES DEMO 浏览器回归 | PASS，旧 E2E 3 组、媒体 15 组、社区 11 组 / 20 样本；CF_PAGES=1 且 PUBLIC_DEMO_ONLY=false 仍强制 DEMO |
-| GitHub Actions | 推送后核对，回执待补充 |
+| GitHub Actions | PASS，9/9 作业成功，[实现提交 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37906034954) |
 
 社区浏览器覆盖：默认首页、四入口、六年龄/七话题/42 组合、空结果/排序、持续示例标记、详情返回/非零滚动、无效 ID、各字段必填与超限、纯文本攻击字符串、预览/编辑/刷新清空，以及旧 Session/Insights/Reports 进入/返回。
 
@@ -97,7 +97,13 @@ Session 仍需主动 Start。离开媒体页保持原 hide/unmount 清理，不�
 
 指定提交消息：`feat: establish Yuhuai parent community prototype`。本地验证完成后按本阶段明确文件提交，正常 push 至 `origin/pc-01-community-prototype`，检查远端 SHA 与本地一致；不推送 master 或 Phase 04。
 
-实现提交 SHA、远端核对 SHA 与 GitHub Actions 链接将在推送并完成 CI 后补入本节。报告的后续回执只更新文档，不改变已验收的实现；最终分支 tip 以 GitHub 分支及最终交付消息为准。
+- 最终实现 commit SHA：`fb4faafe139962a55800edb28b3adbf657b43258`，提交消息为上述指定消息。
+- 实现交付时远端分支 SHA：`fb4faafe139962a55800edb28b3adbf657b43258`，`git ls-remote` 与本地 HEAD 一致。
+- GitHub Actions：[37906034954](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37906034954)，状态 **completed / success**。backend-tests、frontend-build、frontend-tests、lint、dependency-checks、client-h5、client-h5-preview、cloud-metadata-tests、client-wechat-build 九项均 success，新增社区验收已在两个 H5 作业执行。
+- GitHub 根 README blob 与本地一致：`e7e0ebbee8cace384fbf626dae1d53248c07b658`。
+- Phase 04 远端仍为父提交 `ce95b555bb1667ec653d05960ba2e47210b8b75d`；master 未合并。旧 schema blob 与父提交一致：`11d4333626acf4287a395453028985b90c4b0527`。
+
+这次 CI/SHA 回执作为后续文档提交保存，不改变上述已验收实现。文档提交继承该实现，其最终本地/远端 tip 在最终交付消息另行核对；当前 tip 可查看 [远端分支](https://github.com/C1801SYQ/SoulCompanion-AI/tree/pc-01-community-prototype)，对应回归可查看 [分支 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions?query=branch%3Apc-01-community-prototype)。这样不将报告所在提交的 hash 误写成其父实现提交。
 
 ## 已知限制与 PC02 人工前置条件
 
