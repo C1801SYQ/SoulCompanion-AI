@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Taro, { useDidHide, useDidShow, usePageScroll } from '@tarojs/taro';
 import { Text, View } from '@tarojs/components';
 import { AccessibleButton as Button } from '../../components/AccessibleButton';
@@ -11,30 +11,37 @@ import { EXAMPLE_POSTS } from '../../community/fixtures/posts';
 import { readBrowseState, saveBrowseState } from '../../community/memory';
 import { filterCommunityPosts } from '../../community/model';
 import { openPage } from '../../navigation';
+import { createScrollRestoreLifecycle } from '../../community/scrollRestore';
+import { useCloud } from '../../state/CloudProvider';
 
 function CommunityPage() {
   const [browse, setBrowse] = useState(readBrowseState);
   const [navigationError, setNavigationError] = useState('');
   const browseRef = useRef(browse);
-  const visibleRef = useRef(true);
+  const visibility = useRef(createScrollRestoreLifecycle());
+  const { store } = useCloud();
+  useEffect(() => () => visibility.current.dispose(), []);
 
   usePageScroll(({ scrollTop }) => {
-    if (!visibleRef.current) return;
+    if (!visibility.current.isVisible()) return;
     const next = { ...browseRef.current, scrollTop };
     browseRef.current = next;
     saveBrowseState(next);
   });
   useDidHide(() => {
-    visibleRef.current = false;
+    visibility.current.hide();
     saveBrowseState(browseRef.current);
   });
   useDidShow(() => {
-    visibleRef.current = true;
+    const frame = visibility.current.show();
+    const authEpoch = store.getState().auth.epoch;
     const saved = readBrowseState();
     browseRef.current = saved;
     setBrowse(saved);
     Taro.nextTick(() => {
+      if (!visibility.current.isCurrent(frame) || store.getState().auth.epoch !== authEpoch) return;
       void Taro.pageScrollTo({ scrollTop: saved.scrollTop, duration: 0 }).catch(() => {
+        if (!visibility.current.isCurrent(frame) || store.getState().auth.epoch !== authEpoch) return;
         setNavigationError('筛选已保留，暂时无法恢复阅读位置。请从列表继续浏览。');
       });
     });

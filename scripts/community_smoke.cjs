@@ -14,6 +14,7 @@ const OUTPUT = path.join(ROOT, '.test-artifacts', 'community-acceptance');
 const AGES = ['0-2', '3-5', '6-8', '9-12', '13-15', '16-18'];
 const TOPICS = ['parent-child', 'emotional-support', 'daily-habits', 'school-transition', 'learning-peers', 'adolescence', 'parent-growth'];
 const SCREENS = [{ width: 375, height: 812 }, { width: 390, height: 844 }, { width: 430, height: 932 },
+  { width: 600, height: 900 }, { width: 767, height: 1024 },
   { width: 768, height: 1024 }, { width: 1440, height: 900 }];
 const MAIN_PAGES = ['community', 'knowledge', 'growth', 'profile'];
 const activeFrame = page => page.locator('.taro_page_show.taro_page_stationed:not(.taro_page_shade):visible').last();
@@ -329,6 +330,15 @@ async function acceptance() {
         await expect(page.getByRole('main')).toHaveCount(1); await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
         await expect(page.getByRole('navigation').first()).toBeVisible();
         await assertNoOverflow(screen.width);
+        if (screen.width === 600 || screen.width === 767) {
+          const rail = await activeFrame(page).locator('.sc-rail').boundingBox();
+          assert.ok(rail && Math.abs(rail.x) <= 1 && Math.abs(rail.width - screen.width) <= 1,
+            'At the mobile navigation breakpoint, the rail must span the screen');
+          assert.ok(Math.abs(rail.y + rail.height - screen.height) <= 1,
+            'The mobile navigation must sit at the screen bottom, not remain a shortened sidebar');
+          assert.equal(await activeFrame(page).locator('.sc-workspace').evaluate(node => getComputedStyle(node).marginLeft), '0px',
+            'Mobile navigation must release the desktop workspace margin');
+        }
         const targets = [];
         for (const destination of MAIN_PAGES) {
           const box = await element(page, 'nav-' + destination).boundingBox();
@@ -351,7 +361,7 @@ async function acceptance() {
         if (name === 'community' || screen.width === 390) await screenshot(`${name}-${screen.width}`);
       }
     }
-    passed('Four main pages, five required viewports, functional filters, 44px targets and no horizontal overflow');
+    passed('Four main pages, five required viewports plus 600/767px navigation breakpoints, functional filters, 44px targets and no horizontal overflow');
 
     await page.setViewportSize(SCREENS[0]); await navigate('community');
     await element(page, 'pc-age-3-5').focus(); await page.keyboard.press('Space'); await expect(element(page, 'pc-age-3-5')).toHaveAttribute('aria-pressed', 'true');

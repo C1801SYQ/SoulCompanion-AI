@@ -1,4 +1,5 @@
 import Taro from '@tarojs/taro';
+import { dismissKeyboard } from './platform/keyboard';
 
 export type PrimaryPage = 'community' | 'knowledge' | 'growth' | 'profile';
 export type ToolPage = 'home' | 'session' | 'insights' | 'reports' | 'settings';
@@ -19,30 +20,55 @@ export function primaryFor(page: PageName): PrimaryPage {
   if (isFamilyTool(page)) return page === 'settings' ? 'profile' : 'growth';
   return page;
 }
-export async function navigatePrimary(page: PrimaryPage): Promise<void> {
-  await Taro.reLaunch({ url: `/pages/${page}/index` });
+let pendingTransition: Promise<void> | undefined;
+
+/** The first tap owns the transition; further taps share its result until it settles. */
+function transition(action: () => Promise<unknown> | void): Promise<void> {
+  if (pendingTransition) return pendingTransition;
+  const operation = Promise.resolve().then(async () => {
+    try { await dismissKeyboard(); } catch { /* Keyboard availability must not block navigation. */ }
+    await action();
+  });
+  const tracked = operation.finally(() => {
+    if (pendingTransition === tracked) pendingTransition = undefined;
+  });
+  pendingTransition = tracked;
+  return tracked;
 }
-/** Public details, drafts and family tools use a page frame that can be returned from. */
-export async function openPage(url: string): Promise<void> {
-  if (!/^\/pages\/(?:community\/(?:detail(?:\?id=[a-zA-Z0-9_-]{1,80})?|compose)|(?:home|session|insights|reports|settings)\/index)$/.test(url)) {
-    throw new Error('Unsupported local destination');
-  }
-  await Taro.navigateTo({ url });
-}
-export async function openTool(page: ToolPage): Promise<void> {
+
+function currentTool(): ToolPage | undefined {
   const frames = Taro.getCurrentPages();
   // H5 custom routes use /session; WeChat uses pages/session/index.
   const current = frames[frames.length - 1]?.route?.split('?')[0].replace(/^\/+|\/+$/g, '');
-  const currentTool = FAMILY_TOOLS.find(item => current === item.page || current === `pages/${item.page}/index`)?.page;
-  if (currentTool === page) return;
-  if (currentTool) await Taro.redirectTo({ url: `/pages/${page}/index` });
-  else await openPage(`/pages/${page}/index`);
+  return FAMILY_TOOLS.find(item => current === item.page || current === `pages/${item.page}/index`)?.page;
 }
-export async function backToCommunity(): Promise<void> {
-  if (Taro.getCurrentPages().length > 1) await Taro.navigateBack({ delta: 1 });
-  else await navigatePrimary('community');
+
+export function navigatePrimary(page: PrimaryPage): Promise<void> {
+  return transition(() => Taro.reLaunch({ url: `/pages/${page}/index` }));
 }
-export async function backFromTool(): Promise<void> {
-  if (Taro.getCurrentPages().length > 1) await Taro.navigateBack({ delta: 1 });
-  else await navigatePrimary('growth');
+/** Public details, drafts and family tools use a page frame that can be returned from. */
+export function openPage(url: string): Promise<void> {
+  if (!/^\/pages\/(?:community\/(?:detail(?:\?id=[a-zA-Z0-9_-]{1,80})?|compose)|(?:home|session|insights|reports|settings)\/index)$/.test(url)) {
+    return Promise.reject(new Error('Unsupported local destination'));
+  }
+  return transition(() => Taro.navigateTo({ url }));
+}
+export function openTool(page: ToolPage): Promise<void> {
+  return transition(() => {
+    const current = currentTool();
+    if (current === page) return;
+    const url = `/pages/${page}/index`;
+    return current ? Taro.redirectTo({ url }) : Taro.navigateTo({ url });
+  });
+}
+export function backToCommunity(): Promise<void> {
+  return transition(() => Taro.getCurrentPages().length > 1
+    ? Taro.navigateBack({ delta: 1 })
+    : Taro.reLaunch({ url: '/pages/community/index' }));
+}
+export function backFromTool(): Promise<void> {
+  return transition(() => {
+    if (Taro.getCurrentPages().length > 1) return Taro.navigateBack({ delta: 1 });
+    return Taro.reLaunch({ url: `/pages/${currentTool() === 'settings' ? 'profile' : 'growth'}/index` });
+  });
 }

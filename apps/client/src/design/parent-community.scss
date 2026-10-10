@@ -79,13 +79,17 @@
   .pc-aside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 4px; }
 }
 @media (max-width: 767px) {
-  .pc-shell .sc-navigation { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .pc-shell .sc-rail { background: var(--sc-paper); height: calc(80px + env(safe-area-inset-bottom, 0px)); }
-  .pc-shell .sc-nav-item { min-height: 72px; gap: 6px; }
+  .pc-shell .sc-navigation { display: grid; height: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; align-items: stretch; }
+  .pc-shell .sc-rail { top: auto; bottom: 0; width: 100%; padding: 0 8px env(safe-area-inset-bottom, 0px); border-right: 0; border-top: 1px solid var(--sc-boundary); background: var(--sc-paper); height: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .pc-shell .sc-brand, .pc-shell .sc-rail-note, .pc-shell .sc-nav-caption { display: none; }
+  .pc-shell .sc-nav-item { flex-direction: column; justify-content: center; min-height: 72px; gap: 6px; padding: 9px 2px; border-radius: 0; }
+  .pc-shell .sc-nav-item--active { background: transparent; }
+  .pc-shell .sc-nav-item--active .sc-nav-icon { background-color: var(--sc-mist); }
   .pc-shell .sc-nav-label { font-size: .8125em; line-height: 1.5; white-space: normal; }
-  .pc-shell .sc-workspace { padding-left: 18px; padding-right: 18px; }
+  .pc-shell .sc-workspace { margin-left: 0; padding-left: 18px; padding-right: 18px; }
+  .pc-shell--keyboard-open .sc-rail { display: none; }
   .pc-shell .sc-topbar { min-height: 68px; gap: 8px; }
-  .pc-shell .sc-topbar-brand { font-size: 23px; letter-spacing: 3px; }
+  .pc-shell .sc-topbar-brand { display: block; font-size: 23px; letter-spacing: 3px; }
   .pc-shell .sc-status { white-space: normal; max-width: 75%; font-size: .75em; }
   .pc-shell .sc-main { padding-top: 24px; padding-bottom: 28px; }
   .pc-shell .sc-page-header { flex-direction: column; gap: 16px; }

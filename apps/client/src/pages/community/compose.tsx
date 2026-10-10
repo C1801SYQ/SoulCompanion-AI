@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Input, Text, Textarea, View } from '@tarojs/components';
 import { AccessibleButton as Button } from '../../components/AccessibleButton';
 import { AppShell, PageHeader } from '../../components/AppShell';
@@ -6,28 +6,39 @@ import { withClientErrorBoundary } from '../../components/ClientErrorBoundary';
 import { ChoiceGroup, PostTags } from '../../community/components';
 import { AGE_BANDS, TOPICS, TITLE_LIMIT, BODY_LIMIT } from '../../community/constants';
 import { readDraft, saveDraft } from '../../community/memory';
-import { countCharacters, validatePostDraft } from '../../community/model';
-import type { CommunityDraftErrors, CommunityDraftInput, ValidCommunityDraft } from '../../community/types';
+import { countCharacters } from '../../community/model';
+import type { CommunityDraftInput } from '../../community/types';
+import { createEditorState, editorForEpoch, previewEditor, updateEditor } from '../../community/editorState';
 import { backToCommunity } from '../../navigation';
+import { dismissKeyboard, textInputKeyboardProps } from '../../platform/keyboard';
+import { useCloud } from '../../state/CloudProvider';
 
 function CommunityComposePage() {
-  const [draft, setDraft] = useState(readDraft);
-  const [preview, setPreview] = useState<ValidCommunityDraft | null>(null);
-  const [errors, setErrors] = useState<CommunityDraftErrors>({});
+  const { state, store } = useCloud();
+  const authEpoch = state.auth.epoch;
+  const [editor, setEditor] = useState(() => createEditorState(authEpoch, readDraft()));
+  const { draft, preview, errors } = editorForEpoch(editor, authEpoch);
   const [navigationError, setNavigationError] = useState('');
+  useEffect(() => {
+    setEditor(current => editorForEpoch(current, authEpoch));
+    setNavigationError('');
+  }, [authEpoch]);
 
   function update(field: keyof CommunityDraftInput, value: string) {
-    setDraft(current => {
-      const next = { ...current, [field]: value };
-      saveDraft(next);
+    if (store.getState().auth.epoch !== authEpoch) return;
+    setEditor(current => {
+      if (store.getState().auth.epoch !== authEpoch) return current;
+      const next = updateEditor(current, authEpoch, field, value);
+      saveDraft(next.draft);
       return next;
     });
-    setErrors(current => ({ ...current, [field]: undefined }));
   }
   function showPreview() {
-    const result = validatePostDraft(draft);
-    setErrors(result.errors);
-    if (result.valid && result.data) setPreview(result.data);
+    if (store.getState().auth.epoch !== authEpoch) return;
+    setEditor(current => store.getState().auth.epoch === authEpoch ? previewEditor(current, authEpoch) : current);
+    void dismissKeyboard().catch(() => {
+      if (store.getState().auth.epoch === authEpoch) setNavigationError('键盘暂时无法收起，仍可继续编辑或查看预览。');
+    });
   }
   function back() {
     setNavigationError('');
@@ -46,17 +57,17 @@ function CommunityComposePage() {
       <PostTags post={preview} />
       <Text className="pc-plain-text">{preview.body}</Text>
       <Text className="pc-form-hint">这份预览不会进入帖子列表，也不会生成真实审核状态。</Text>
-      <Button id="pc-compose-edit" className="pc-action pc-action--primary" onClick={() => setPreview(null)}>返回编辑</Button>
+      <Button id="pc-compose-edit" className="pc-action pc-action--primary" onClick={() => setEditor(current => ({ ...editorForEpoch(current, authEpoch), preview: null }))}>返回编辑</Button>
     </View> : <View className="pc-compose-form">
       <View className="pc-form-field">
         <Text className="pc-field-label">标题</Text>
-        <Input id="pc-title-input" className="pc-input" value={draft.title} maxlength={-1} placeholder="用一句话说说想分享什么" ariaLabel="投稿标题，最多 80 字" nativeProps={{ 'aria-label': '投稿标题，最多 80 字', 'aria-describedby': 'pc-title-hint', 'aria-invalid': Boolean(errors.title) }} onInput={event => update('title', event.detail.value)} />
+        <Input id="pc-title-input" className="pc-input" {...textInputKeyboardProps} value={draft.title} maxlength={-1} placeholder="用一句话说说想分享什么" ariaLabel="投稿标题，最多 80 字" nativeProps={{ 'aria-label': '投稿标题，最多 80 字', 'aria-describedby': 'pc-title-hint', 'aria-invalid': Boolean(errors.title) }} onInput={event => update('title', event.detail.value)} />
         <Text id="pc-title-hint" className="pc-form-hint">{countCharacters(draft.title.trim())} / {TITLE_LIMIT} 字 · 按 Unicode 字符计数</Text>
         {errors.title && <Text className="pc-form-error">{errors.title}</Text>}
       </View>
       <View className="pc-form-field">
         <Text className="pc-field-label">正文</Text>
-        <Textarea id="pc-body-input" className="pc-textarea" value={draft.body} maxlength={-1} placeholder="写一点你的经历和感受，暂时只供自己预览" ariaLabel="投稿正文，最多 2000 字" nativeProps={{ 'aria-label': '投稿正文，最多 2000 字', 'aria-describedby': 'pc-body-hint', 'aria-invalid': Boolean(errors.body) }} onInput={event => update('body', event.detail.value)} />
+        <Textarea id="pc-body-input" className="pc-textarea" {...textInputKeyboardProps} value={draft.body} maxlength={-1} placeholder="写一点你的经历和感受，暂时只供自己预览" ariaLabel="投稿正文，最多 2000 字" nativeProps={{ 'aria-label': '投稿正文，最多 2000 字', 'aria-describedby': 'pc-body-hint', 'aria-invalid': Boolean(errors.body) }} onInput={event => update('body', event.detail.value)} />
         <Text id="pc-body-hint" className="pc-form-hint">{countCharacters(draft.body.trim())} / {BODY_LIMIT} 字 · 纯文本展示</Text>
         {errors.body && <Text className="pc-form-error">{errors.body}</Text>}
       </View>

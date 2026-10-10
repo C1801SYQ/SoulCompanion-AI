@@ -6,6 +6,7 @@ import { useCompanion } from '../state/AppProvider';
 import { StatusPill } from './Primitives';
 import { useCloud } from '../state/CloudProvider';
 import { FAMILY_TOOLS, PRIMARY_NAVIGATION, backFromTool, isFamilyTool, navigatePrimary, openTool, primaryFor, type PageName, type PrimaryPage } from '../navigation';
+import { useNavigationKeyboardHeight } from '../platform/keyboard';
 
 export type { PageName } from '../navigation';
 
@@ -14,6 +15,7 @@ export function AppShell({ page, children }: { page: PageName; children: ReactNo
   const { store } = useCloud();
   const familyTool = isFamilyTool(page);
   const primaryPage = primaryFor(page);
+  const keyboardHeight = useNavigationKeyboardHeight();
   useEffect(() => { store.setPrivateReadsEnabled(familyTool); }, [store, familyTool]);
   useDidShow(() => store.setPrivateReadsEnabled(familyTool));
   useDidHide(() => store.setPrivateReadsEnabled(false));
@@ -25,7 +27,7 @@ export function AppShell({ page, children }: { page: PageName; children: ReactNo
     store.setPrivateReadsEnabled(false);
     void navigatePrimary(next).catch(() => { store.setPrivateReadsEnabled(familyTool); setNavigationError('页面暂时无法打开，请再试一次。'); });
   }
-  return <View className={`sc-shell pc-shell ${familyTool ? 'pc-shell--family' : 'pc-shell--public'}`}>
+  return <View className={`sc-shell pc-shell ${familyTool ? 'pc-shell--family' : 'pc-shell--public'}${keyboardHeight > 0 ? ' pc-shell--keyboard-open' : ''}`}>
     <View className="sc-rail">
       <View className="sc-brand"><View className="sc-brand-mark" ariaHidden><View /></View><View><Text className="sc-brand-name">予怀</Text><Text className="sc-brand-caption">一起理解孩子，陪伴成长</Text></View></View>
       <View className="sc-navigation" role="navigation" ariaLabel="主要导航">
