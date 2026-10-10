@@ -8,7 +8,7 @@
 
 Phase 01～04 的共享客户端、终端媒体采集及 CloudBase 云后端成果继续沿用。Phase 04 已完成实际部署、API 和 H5 官方 SDK 验收，云端保存账户、私有儿童档案及会话元数据；PC01 没有新增云资源。**V2 媒体上传、AI 推理和 Android APK 尚未实现，实体机器人暂停。**
 
-PC02 增加微信导航/键盘兼容、独立家长社区昵称及可选私有儿童年龄段的软件实现。**新云集合和函数更新尚待授权部署，当前云端不能按已上线功能描述。** 兼容性构建已获用户确认 DevTools 编译与页面切换正常，最终身份构建、真实微信登录和手机仍需人工验证。当前状态见 [PC02 报告](docs/parent-community/PC02_DELIVERY_REPORT.md)、[人工清单](docs/parent-community/WECHAT_MANUAL_CHECKLIST.md) 和 [云变更计划](docs/parent-community/PC02_CLOUD_CHANGE_PLAN.md)。
+PC02 增加微信导航/键盘兼容、独立家长社区昵称及可选私有儿童年龄段。**限定云增量已获授权，修复后的函数代码和 version2 marker 已生效；429 项后端回归、15项真实 CloudBase API及额外官方 H5 SDK完整组合验收通过。** 首次认证门槛失败和成功回滚保留在报告中。兼容性构建已获用户确认 DevTools 编译与页面切换正常，最终身份构建、真实微信登录和手机仍需人工验证；真实 API/H5通过不等于微信真机通过。当前状态见 [PC02 报告](docs/parent-community/PC02_DELIVERY_REPORT.md)、[人工清单](docs/parent-community/WECHAT_MANUAL_CHECKLIST.md) 和 [云变更计划](docs/parent-community/PC02_CLOUD_CHANGE_PLAN.md)。
 
 本项目不提供临床诊断或疗效判断，也不把商业计划中的技术、专家合作和财务陈述当作已实现能力。[PC01 报告](docs/parent-community/PC01_DELIVERY_REPORT.md) 和 [Phase 04 报告](docs/v2/PHASE04_DELIVERY_REPORT.md) 保留各阶段的历史证据。
 
@@ -21,8 +21,8 @@ PC02 增加微信导航/键盘兼容、独立家长社区昵称及可选私有�
 | 微信小程序 | 共享 Taro 页面、媒体适配器和官方 CloudBase 微信登录适配器 | PC02 含 SDK 的构建及官方 WXSS 编译通过；兼容性构建 DevTools 用户确认，最终身份/登录/真机仍待人工验证 |
 | Android | 规划复用客户端与 Web 媒体适配器 | 尚无 APK、原生封装或 Android 实机验收 |
 | 静态托管 | Cloudflare Pages 托管 H5 | 公开页面保持 `DEMO_ONLY`，不接入真实云端账户或数据 |
-| 云后端 | CloudBase HTTP 云函数 + 独立 FastAPI `/api/v2` | 实际部署、健康检查、元数据业务和用户隔离验收通过 |
-| 认证与存储 | 官方 CloudBase Auth SDK + CloudBase 文档数据库 | 真实双账户 Web 认证、所有权隔离及数据库直连拒绝通过 |
+| 云后端 | CloudBase HTTP 云函数 + 独立 FastAPI `/api/v2` | Phase04 成果保留；PC02 修复代码与 version2 marker 已生效，15 项真实 API 验收通过 |
+| 认证与存储 | 官方 CloudBase Auth SDK + CloudBase 文档数据库 | PC02 双账户API15项及额外完整API11项/H5 SDK12项通过；微信账户与手机待人工执行 |
 
 客户端位于 [apps/client](apps/client/)，云 API 位于 [cloud/api](cloud/api/)。社区、育儿知识、成长记录、我的共用现有设计系统；Home、Session、Insights、Reports、Settings 保留原路径。V1 本机看板、SQLite、研究模型和机器人代码继续保留，见下方 Legacy 小节。
 
@@ -53,7 +53,7 @@ flowchart TB
 
 - Web 使用官方 CloudBase 用户名/密码登录；微信适配器使用官方微信身份流程。FastAPI 对每个私有请求进行在线 token 校验，不自行存储密码或签发 JWT，也不相信客户端提交的 UID/OpenID。
 - 已验证主体映射为应用用户 UUID；所有私有档案和会话操作使用服务端推导的 owner。跨用户与不存在资源统一返回 404，匿名私有访问返回 401。
-- 七个项目集合保存应用用户、身份映射、儿童档案、会话、只读情绪/报告及 schema marker；十三个索引已核对，集合权限为 ADMINONLY。客户端不能绕过 API 直查数据库。
+- Phase04 的七个集合和十三个项目索引保持不变；PC02 授权后新增一个 ADMINONLY 家长社区资料集合及一个唯一 owner 索引，独立 marker 当前为 version2。客户端不能绕过 API 直查数据库，真实 token 的直接访问拒绝已验证。
 - 令牌只保存在客户端内存，刷新后重新登录。退出、账户切换和 401 会清除私有界面与过期响应。服务端 key 仅放在忽略的部署配置和云函数托管环境变量中。
 - 精确 CORS、请求大小/超时限制、应用及网关限流保护开发 API。现有开发环境是有限期限和配额的 CloudBase 体验版，**不是永久免费或无限资源**；Phase 04 验收时超额付费和自动续费均关闭。
 
@@ -71,7 +71,7 @@ flowchart TB
 
 - 四个主入口、六个年龄段与七类话题组合筛选、示例帖子详情、返回状态恢复和纯文本投稿预览；示例内容始终明确标注。
 - 米黄/柔灰的共享界面、桌面/移动导航和可访问控件；育儿知识、手动成长记录保持真实的未接入说明。
-- PC02 软件支持独立公开昵称、可选儿童年龄、身份切换同步隐藏草稿和能力探测；新持久化尚待云授权，界面不会冒充已保存。
+- PC02 支持主动保存独立公开昵称、可选儿童年龄、身份切换同步隐藏草稿和能力探测；云端昵称及年龄读写、两账户所有权与清理通过真实 API 验收，界面以实际读回确认保存。
 - 保留五个旧家庭工具、减少动态效果设置、DEMO 与错误/离线状态；公共路由暂停私有请求，账户切换继续清理私有数据和内存草稿。
 - 用户主动开启的本地摄像头/麦克风会话、预览/采样及生命周期清理。
 - CloudBase Web 登录/退出、用户昵称、儿童档案新增/修改/选择/归档。
@@ -102,7 +102,7 @@ flowchart TB
 | 社区路线 | 主题 | 状态 |
 | --- | --- | --- |
 | PC01 | 家长社区产品重定位与可视原型 | 已交付并保留；真实发布与审核未实现 |
-| PC02 | 微信身份与家庭资料 | 软件实现及本地验收；新云持久化待授权、最终微信/真机待人工验收 |
+| PC02 | 微信身份与家庭资料 | 软件自动测试、15 项真实 API 与额外 API 11 项/H5 SDK 12 项通过，最终软件提交自身 9 项 CI 全通过；最终身份构建 DevTools/微信/真机待人工验收 |
 | PC03 | 社区数据库与审核后端 | 规划 |
 | PC04 | 真实社区与运营闭环 | 规划 |
 | PC05 | 育儿知识与私有成长记录 | 规划 |
@@ -163,7 +163,7 @@ npm run client:build:h5
 npm run client:build:weapp
 ```
 
-输出为 `apps/client/dist-weapp`。使用有 AppID 权限的账号导入微信开发者工具；合法 request 域名、微信登录和真机步骤见 [MANUAL_ACTIONS](docs/v2/MANUAL_ACTIONS.md)。Android 目前只有规划，没有 APK 构建命令。
+输出为 `apps/client/dist-weapp`。使用有 AppID 权限的账号导入微信开发者工具；当前最终构建、微信登录与真机步骤见 [PC02 人工清单](docs/parent-community/WECHAT_MANUAL_CHECKLIST.md)，合法 request 域名等历史配置见 [MANUAL_ACTIONS](docs/v2/MANUAL_ACTIONS.md)。昵称和可选儿童年龄的真实 API 已通过，微信界面保存仍须按清单人工验收。Android 目前只有规划，没有 APK 构建命令。
 
 ## 开发配置
 
@@ -230,6 +230,8 @@ FastAPI V2 已部署为既有 CloudBase 环境中的 `sc-v2-api` HTTP 云函数�
 | [PC01 基线审计](docs/parent-community/PC01_BASELINE_AUDIT.md) | Git、前端、导航、认证、媒体与测试基线 |
 | [家长社区路线](docs/parent-community/00-roadmap.md) / [产品规格](docs/parent-community/01-product-spec.md) | PC01～06 与当前产品/数据边界 |
 | [PC01 交付报告](docs/parent-community/PC01_DELIVERY_REPORT.md) | 原型、自动测试、平台限制及提交回执 |
+| [PC02 交付报告](docs/parent-community/PC02_DELIVERY_REPORT.md) / [限定云变更](docs/parent-community/PC02_CLOUD_CHANGE_PLAN.md) | 微信身份与家庭资料、真实云执行/回滚、最终验收状态 |
+| [PC02 schema](scripts/cloud_family_schema.py) / [代码部署与回滚](scripts/cloud_family_deploy.py) / [真实验收](scripts/cloud_family_acceptance.py) | 默认离线计划；apply 需核对既有授权范围和显式执行门槛 |
 | [Phase 04 交付报告](docs/v2/PHASE04_DELIVERY_REPORT.md) | 31 项结果、端点、真实证据、用量与限制 |
 | [CloudBase 部署](docs/v2/CLOUDBASE_DEPLOY.md) | 审计、schema、打包、受控部署和真实验收 |
 | [微信人工操作](docs/v2/MANUAL_ACTIONS.md) | DevTools/真机、合法域名、key 轮换 |

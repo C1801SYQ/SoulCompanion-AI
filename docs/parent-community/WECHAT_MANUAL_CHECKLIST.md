@@ -1,5 +1,7 @@
 # PC02 微信人工验收清单
 
+更新：2026-10-10。
+
 自动测试、开发者工具模拟器与微信手机必须分别记录。H5 Fake SDK、`taro build` 或独立 WXSS 编译不能替代微信登录和真机验收。不要提交账号、密码、二维码登录信息、Token、个人资料或原始媒体。
 
 ## 当前实际证据
@@ -9,18 +11,37 @@
 - 该手动检查针对当时的兼容性构建。最终身份功能构建仍需重新编译验收，不能继承为最终登录 PASS。
 - CLI 自动化：BLOCKED。CLI 在连接前要求其 profile 目录存在 `.ide-status=On` 与 `.ide` 端口文件；只读检查发现该预期目录无这两个文件，即使用户已开启服务端口。具体为何未同步尚未确认，未修改安装文件、伪造状态或绕过登录。
 - 扫码预览、真实微信登录、两个微信账户和手机设备：NOT TESTED。
-- 新云 schema / 函数尚待 [云变更授权](PC02_CLOUD_CHANGE_PLAN.md)；不要先点击写入操作。
+- 用户已授权 [限定云变更](PC02_CLOUD_CHANGE_PLAN.md)。新集合和索引已创建；首次真实认证拒绝验收失败后曾关闭 PC02 marker、恢复 Phase04 代码。认证修复后代码及 marker version2 已生效，15 项真实 API 验收通过，两合成账户的儿童清理与 token 撤销均已验证。该验收使用真实 CloudBase 用户名登录，不替代下方的微信用户操作。
+- 当前部署额外的官方 H5 SDK 完整组合验收通过（API11项、浏览器12项），仅使用既有合成账户；真实微信登录仍是另一项人工验收。最终软件代码提交为 `6c41d4b0854cc08f41edbdf66d8429ac93f82f6a`，最终身份构建与手机结果尚无用户回执。
 
 ## 本地导入和编译
 
-1. 使用 Node.js 24，运行 `npm run client:build:weapp`；生成目录为 `apps/client/dist-weapp`，不可手改或提交产物。
+现有 `apps/client/dist-weapp` 已按下列公开云配置构建，可以直接用于本次导入。若需要重建，使用 Node.js 24，在仓库根目录的 PowerShell 完整执行以下命令；只运行 build 而未配置 API base 会生成无法登录云账户的构建。
+
+```powershell
+Set-Location D:\SoulCompanion_AI
+$env:PUBLIC_CLOUDBASE_ENV_ID = 'soulcompanion-dev-d0dzo6f2a24211'
+$env:PUBLIC_CLOUDBASE_REGION = 'ap-shanghai'
+$env:PUBLIC_WECHAT_APP_ID = 'wx11a055ed4dc69764'
+$env:PUBLIC_API_BASE_URL = 'https://soulcompanion-dev-d0dzo6f2a24211-1501181209.ap-shanghai.app.tcloudbase.com'
+$env:PUBLIC_API_URL = ''
+$env:PUBLIC_DEMO_ONLY = 'false'
+Remove-Item Env:CF_PAGES -ErrorAction SilentlyContinue
+npm run client:build:weapp
+```
+
+以上均为公开配置，只影响本地终端和本地产物，不修改 Cloudflare Production 或微信后台。不得加入 API Key、AppSecret 或登录凭据。
+
+1. 生成目录为 `apps/client/dist-weapp`，不可手改或提交产物。
 2. 在微信开发者工具导入 `apps/client`，使用有权限的 AppID `wx11a055ed4dc69764` 账号。项目配置的 `miniprogramRoot` 指向 `dist-weapp/`。
 3. 编译，记录工具版本、构建提交、错误文字与结果。检查默认社区首页、四主入口、年龄与话题组合、空状态、详情返回的筛选与滚动、投稿预览/返回编辑。预览应始终显示“示例内容 / 产品预览”，不会真正发布。
 4. 检查直接进入 Settings 的返回路径、工具之间切换、快速重复点击、弱网失败提示和重新进入。公共页面不得自动申请摄像头或麦克风、读取私有家庭 API。
 
-## 云登录与家庭档案（授权部署后）
+真机登录前核实账号有该 AppID 权限，并按 [历史微信配置](../v2/MANUAL_ACTIONS.md) 核实合法 request 域名。DevTools 关闭域名校验后的成功不能计为真机 PASS；本次不自动修改微信或 CloudBase 后台配置。
 
-由维护者按仓库既有配置构建 cloud-enabled 小程序；只设置公开 Env ID、HTTPS API base、AppID，不把服务端 API Key/AppSecret 带入构建。不调整 Cloudflare Production。
+## 云登录与家庭档案
+
+PC02 重新部署及真实 API 验收已通过，以下微信步骤等待用户执行；已有云授权无需重复获取。由维护者按仓库既有配置构建 cloud-enabled 小程序；只设置公开 Env ID、HTTPS API base、AppID，不把服务端 API Key/AppSecret 带入构建。不调整 Cloudflare Production。
 
 1. 我的 → 账号与设置 → 主动点击“使用微信账号登录”。验证官方 CloudBase 当前用户与服务端账户映射；退出再登录应保持同一个服务端账户，不出现重复映射。不要读取微信头像或昵称来自动设置社区作者。
 2. 主动保存独立社区昵称。空值、1 字、超过 24 字、换行、控制字符、HTML、链接或表情应被拒绝；同名昵称允许但不是登录身份。等待/读取失败应显示真实状态，不能误称“尚未设置”，保存失败保留输入。
@@ -42,6 +63,6 @@
 | 最终身份构建 DevTools / 模拟器 | MANUAL_VERIFICATION_REQUIRED | 待重新构建和人工检查 |
 | CLI 整项目自动编译 / 预览 | BLOCKED | 服务状态文件未发现；未连接 |
 | 扫码手机预览 | NOT TESTED | 待用户操作 |
-| 真实微信登录 / 当前用户 | NOT TESTED | 待授权部署及用户操作 |
+| 真实微信登录 / 当前用户 | NOT TESTED | 真实 API 已通过，待用户微信操作 |
 | 两账号 / 家庭资料 / 弱网 / 退出 | NOT TESTED | 待真实账户验收 |
 | 手机安全区域 / 键盘 / 媒体生命周期 | NOT TESTED | 浏览器虚拟设备结果不能替代 |
