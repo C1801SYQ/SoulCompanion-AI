@@ -156,7 +156,9 @@ async function acceptance() {
     });
     stage = 'guest_boundary';
     await page.goto(ORIGIN, { waitUntil: 'domcontentloaded' });
-    await element(page, 'nav-settings').click();
+    await element(page, 'nav-profile').click();
+    await expect(element(page, 'pc-account-status')).toContainText('未登录');
+    await element(page, 'pc-private-account').click();
     await expect(element(page, 'cloud-auth-status')).toContainText('未登录');
     check('guest_private_requests_absent', guestPrivate === 0);
     check('automatic_device_acquisition_absent', await page.evaluate(() => window.__cloudAcceptance.mediaCalls === 0));
