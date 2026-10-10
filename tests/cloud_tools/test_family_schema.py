@@ -37,7 +37,7 @@ class FakeAdmin:
         }
         self.reject_index = False
         self.fail_create = False
-        self.pager = 1
+        self.pager = {}
 
     def preflight(self):
         self.preflights += 1
@@ -51,7 +51,8 @@ class FakeAdmin:
             assert name == PARENTS
             self.writes.append((action, deepcopy(body)))
         if action == "ListTables":
-            return {"Tables": [{"TableName": item} for item in self.tables], "Pager": {"TotalPager": self.pager}}
+            pager = {"Limit": 100, "Offset": 0, "Total": len(self.tables), **self.pager} if isinstance(self.pager, dict) else self.pager
+            return {"Tables": [{"TableName": item} for item in self.tables], "Pager": pager}
         if action == "CreateTable":
             if self.fail_create:
                 raise AdminError("SYNTHETIC_CREATE_REJECTED")
@@ -290,12 +291,26 @@ def test_completed_marker_with_missing_resource_is_refused_without_repair(resour
 
 def test_incomplete_listing_and_missing_base_collection_refuse_writes(resources):
     admin, documents, manifest = resources
-    admin.pager = 2
+    admin.pager = {"Total": len(admin.tables) + 1}
     with pytest.raises(AdminError, match="COLLECTION_AUDIT_INCOMPLETE"):
         apply(admin, documents, manifest)
-    admin.pager = 1
+    admin.pager = {}
     del admin.tables["sc_v2_users"]
     with pytest.raises(AdminError, match="BASE_SCHEMA_NOT_READY"):
+        apply(admin, documents, manifest)
+    assert_no_writes(admin, documents)
+
+
+@pytest.mark.parametrize("pager", [
+    None, 1, {"Limit": None}, {"Limit": 99}, {"Limit": True},
+    {"Offset": None}, {"Offset": 1}, {"Offset": False},
+    {"Total": None}, {"Total": "7"}, {"Total": True},
+    {"Total": -1}, {"Total": 6}, {"Total": 8},
+])
+def test_real_list_tables_pagination_must_prove_complete_first_page(resources, pager):
+    admin, documents, manifest = resources
+    admin.pager = pager
+    with pytest.raises(AdminError, match="COLLECTION_AUDIT_INCOMPLETE"):
         apply(admin, documents, manifest)
     assert_no_writes(admin, documents)
 

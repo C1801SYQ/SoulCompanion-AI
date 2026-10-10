@@ -44,6 +44,23 @@ class CloudBaseTokenVerifier:
             raise unavailable() from None
         if response.status_code in {401, 403}:
             raise CloudError(401, "unauthorized", "Please sign in again.")
+        if response.status_code == 400:
+            try:
+                rejection = response.json()
+            except ValueError:
+                raise unavailable() from None
+            # CloudBase JS SDK 3.10.1's OAuth AuthErrorCode maps
+            # FAILED_PRECONDITION to 9. At this introspection endpoint the observed
+            # rejected-token envelope uses this exact string/integer pair. Other
+            # provider failures stay unavailable; descriptions are never trusted.
+            if (
+                isinstance(rejection, dict)
+                and rejection.get("error") == "failed_precondition"
+                and type(rejection.get("error_code")) is int
+                and rejection["error_code"] == 9
+            ):
+                raise CloudError(401, "unauthorized", "Please sign in again.")
+            raise unavailable()
         if response.status_code != 200:
             raise unavailable()
         try:

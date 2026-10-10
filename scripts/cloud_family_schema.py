@@ -176,10 +176,13 @@ class FamilySchemaProvisioner(SchemaProvisioner):
             "EnvId": ENV_ID, "MongoConnector": connector, "MgoLimit": 100, "MgoOffset": 0,
         })
         tables = listing.get("Tables")
-        pager = listing.get("Pager", {}).get("TotalPager")
+        pager = listing.get("Pager")
         if (
             not isinstance(tables, list) or len(tables) >= 100
-            or type(pager) is not int or pager not in {0, 1}
+            or not isinstance(pager, dict)
+            or type(pager.get("Limit")) is not int or pager["Limit"] != 100
+            or type(pager.get("Offset")) is not int or pager["Offset"] != 0
+            or type(pager.get("Total")) is not int or pager["Total"] != len(tables)
             or any(not isinstance(table, dict) or not isinstance(table.get("TableName"), str) for table in tables)
         ):
             raise AdminError("COLLECTION_AUDIT_INCOMPLETE")
