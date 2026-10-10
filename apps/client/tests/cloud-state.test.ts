@@ -9,7 +9,7 @@ const secondId = '22222222-2222-4222-8222-222222222222';
 const sessionId = '33333333-3333-4333-8333-333333333333';
 const date = '2026-10-07T01:00:00Z';
 const user: CloudUser = { id, display_name: 'Synthetic user', status: 'active', created_at: date, updated_at: date };
-const profile: ChildProfile = { id, nickname: 'Synthetic profile', status: 'active', created_at: date, updated_at: date };
+const profile: ChildProfile = { id, nickname: 'Synthetic profile', age_band: null, status: 'active', created_at: date, updated_at: date };
 const active: CloudSession = { id: sessionId, child_profile_id: id, source_platform: 'web', started_at: date, ended_at: null, status: 'active', created_at: date };
 const ended: CloudSession = { ...active, ended_at: '2026-10-07T01:01:00Z', status: 'ended' };
 const tick = async () => { for (let index = 0; index < 20; index++) await Promise.resolve(); };
@@ -19,6 +19,7 @@ function api() {
   let profiles: ChildProfile[] = [];
   const page = <T>(items: T[]) => ({ items, limit: 100, offset: 0, total: items.length });
   const value: CloudApi = {
+    capabilities: vi.fn(() => result({ child_age_band: false, parent_profile: false })), parentProfile: vi.fn(() => result(null)), updateParentProfile: vi.fn(nickname => result({ id, nickname, created_at: date, updated_at: date })),
     me: vi.fn(() => result(user)), updateMe: vi.fn(display_name => result({ ...user, display_name })), children: vi.fn(() => result(page(profiles))),
     child: vi.fn(() => result(profile)), createChild: vi.fn(nickname => { profiles = [{ ...profile, nickname }]; return result(profiles[0]); }), updateChild: vi.fn((selected, nickname) => { profiles = profiles.map(item => item.id === selected ? { ...item, nickname } : item); return result(profiles[0]); }), archiveChild: vi.fn(selected => { profiles = profiles.filter(item => item.id !== selected); return result(undefined); }),
     createSession: vi.fn(() => result(active)), endSession: vi.fn(() => result(ended)), sessions: vi.fn(() => result(page<CloudSession>([]))), emotions: vi.fn(() => result(page([]))), reports: vi.fn(() => result(page([]))), currentReport: vi.fn(() => result(null)),

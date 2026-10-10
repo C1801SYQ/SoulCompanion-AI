@@ -15,6 +15,14 @@ import httpx
 from .auth import AppPrincipal
 from .config import Settings
 from .errors import not_found, unavailable
+from .family_identity import (
+    FAMILY_MARKER_ID,
+    FAMILY_SCHEMA_CHECKSUM,
+    FAMILY_SCHEMA_OWNER,
+    FAMILY_SCHEMA_VERSION,
+    PHASE04_SCHEMA_CHECKSUM,
+    parent_profile_id,
+)
 
 
 Entity = Literal["children", "sessions", "emotions", "reports"]
@@ -26,6 +34,7 @@ COLLECTIONS = {
     "emotions": "sc_v2_emotion_records",
     "reports": "sc_v2_reports",
     "schema": "sc_v2_app_schema",
+    "parent_profiles": "sc_v2_parent_profiles",
 }
 IDENTITY_NAMESPACE = UUID("83133d5c-ea3f-4d0d-b4ca-dfa7af613bc0")
 USER_NAMESPACE = UUID("1cf37531-0292-40e9-9619-4f6c1589f9cc")
@@ -45,8 +54,9 @@ def identity_records(principal: AppPrincipal) -> tuple[dict, dict]:
     )
     # Public IDs contain neither the raw CloudBase UID nor a reversible encoding.
     digest = sha256(key.encode()).hexdigest()
-    user_id, identity_id = str(uuid5(USER_NAMESPACE, digest)), str(
-        uuid5(IDENTITY_NAMESPACE, digest)
+    user_id, identity_id = (
+        str(uuid5(USER_NAMESPACE, digest)),
+        str(uuid5(IDENTITY_NAMESPACE, digest)),
     )
     now = utc_now()
     user = {
@@ -71,6 +81,9 @@ def identity_records(principal: AppPrincipal) -> tuple[dict, dict]:
 
 class CloudRepository(Protocol):
     async def ready(self) -> bool: ...
+    async def family_identity_ready(self) -> bool: ...
+    async def get_parent_profile(self, owner: str) -> dict | None: ...
+    async def save_parent_profile(self, owner: str, nickname: str) -> dict: ...
     async def resolve_user(self, principal: AppPrincipal) -> dict: ...
     async def update_user(self, user_id: str, changes: dict) -> dict: ...
     async def get_owned(self, entity: Entity, record_id: str, owner: str) -> dict: ...
@@ -104,16 +117,49 @@ def _matches(record: dict, query: dict) -> bool:
 class InMemoryRepository:
     """Injected deterministic local test store; production never selects this class."""
 
-    def __init__(self):
+    def __init__(self, *, family_identity_enabled: bool = False):
         self.users: dict[str, dict] = {}
         self.identities: dict[str, dict] = {}
         self.records: dict[str, dict[str, dict]] = {
             kind: {} for kind in ("children", "sessions", "emotions", "reports")
         }
         self._lock = RLock()
+        self.parent_profiles: dict[str, dict] = {}
+        self.family_identity_enabled = family_identity_enabled
 
     async def ready(self) -> bool:
         return True
+
+    async def family_identity_ready(self) -> bool:
+        return self.family_identity_enabled
+
+    async def get_parent_profile(self, owner: str) -> dict | None:
+        with self._lock:
+            record = self.parent_profiles.get(parent_profile_id(owner))
+            if record is not None and record["owner_user_id"] != owner:
+                raise unavailable()
+            return deepcopy(record)
+
+    async def save_parent_profile(self, owner: str, nickname: str) -> dict:
+        with self._lock:
+            now = utc_now()
+            record_id = parent_profile_id(owner)
+            record = self.parent_profiles.setdefault(
+                record_id,
+                {
+                    "_id": record_id,
+                    "id": record_id,
+                    "owner_user_id": owner,
+                    "nickname": nickname,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+            if record["owner_user_id"] != owner:
+                raise unavailable()
+            if record["nickname"] != nickname:
+                record.update(nickname=nickname, updated_at=now)
+            return deepcopy(record)
 
     async def resolve_user(self, principal: AppPrincipal) -> dict:
         user, identity = identity_records(principal)
@@ -293,6 +339,89 @@ class CloudBaseDocumentRepository:
             # Readiness deliberately exposes only a boolean; request failures still
             # propagate as sanitized 503 on application routes.
             return False
+
+    async def family_identity_ready(self) -> bool:
+        """Separate opt-in readiness leaves the Phase04 deployment unchanged."""
+        if not self.settings.api_key or not self.settings.env_id:
+            return False
+        try:
+            family = await self._request(
+                "GET",
+                f"{self._documents('schema')}/{FAMILY_MARKER_ID}",
+                missing_ok=True,
+            )
+            if (
+                not isinstance(family, dict)
+                or family.get("_id") != FAMILY_MARKER_ID
+                or type(family.get("version")) is not int
+                or family["version"] != FAMILY_SCHEMA_VERSION
+                or family.get("owner") != FAMILY_SCHEMA_OWNER
+                or family.get("checksum") != FAMILY_SCHEMA_CHECKSUM
+            ):
+                return False
+            base = await self._request(
+                "GET", f"{self._documents('schema')}/phase04", missing_ok=True
+            )
+            if (
+                not isinstance(base, dict)
+                or base.get("_id") != "phase04"
+                or type(base.get("version")) is not int
+                or base["version"] != 1
+                or base.get("owner") != "SoulCompanion-AI/phase04"
+                or base.get("checksum") != PHASE04_SCHEMA_CHECKSUM
+            ):
+                return False
+            count = await self._request(
+                "GET",
+                self._documents("parent_profiles"),
+                params={"query": "{}", "count": "true"},
+            )
+            return type(count.get("total")) is int and count["total"] >= 0
+        except Exception:
+            # The feature remains disabled during partial or unavailable deployment.
+            return False
+
+    async def get_parent_profile(self, owner: str) -> dict | None:
+        record_id = parent_profile_id(owner)
+        return await self._find_one(
+            "parent_profiles",
+            {"_id": record_id, "id": record_id, "owner_user_id": owner},
+        )
+
+    async def save_parent_profile(self, owner: str, nickname: str) -> dict:
+        now = utc_now()
+        record_id = parent_profile_id(owner)
+        query = {"_id": record_id, "id": record_id, "owner_user_id": owner}
+        candidate = {
+            **query,
+            "nickname": nickname,
+            "created_at": now,
+            "updated_at": now,
+        }
+        # A deterministic primary key and a unique owner index keep concurrent
+        # first saves canonical; confirmation still requires an owner-filtered read.
+        record = await self._ensure_canonical_insert(
+            "parent_profiles", candidate, query
+        )
+        if record.get("nickname") == nickname:
+            return record
+        changes = {"nickname": nickname, "updated_at": now}
+        response = await self._request(
+            "PATCH",
+            self._documents("parent_profiles"),
+            body={
+                "query": query,
+                "data": {"$set": changes},
+                "multi": False,
+                "upsert": False,
+                "replaceMode": False,
+            },
+        )
+        self._validate_update_acknowledgment(response)
+        value = await self._find_one("parent_profiles", query)
+        if response["matched"] != 1 or value is None or not _matches(value, changes):
+            raise unavailable()
+        return value
 
     async def _find_one(self, kind: str, query: dict) -> dict | None:
         data = await self._request(

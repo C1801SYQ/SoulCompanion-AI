@@ -32,8 +32,9 @@ function ProfilePage() {
         <Button id="pc-private-account" className="sc-small-button" onClick={openAccount}>账号与私有档案</Button>
         {navigationError && <View className="sc-resource-notice sc-resource-notice--error" role="status"><Text>{navigationError}</Text></View>}
       </SectionCard>
-      <SectionCard title="公开社区昵称" eyebrow="未来位置 · 尚未接入">
-        <View className="pc-preview-placeholder"><Text className="sc-setting-name">让你决定如何被认识</Text><Text className="sc-body-muted">公开昵称将与登录身份及儿童档案分开。当前示例作者均为合成昵称，这里尚不能设置或展示真实社区身份。</Text></View>
+      <SectionCard title="公开社区昵称" eyebrow="自主选择 · 独立资料">
+        <View className="pc-preview-placeholder"><Text className="sc-setting-name">让你决定如何被认识</Text><Text className="sc-body-muted">主动进入账号与设置后，可查看云端是否开放昵称保存。公开昵称与登录身份及儿童档案分开；当前帖子作者仍为合成示例，真实社区发布尚未开放。</Text></View>
+        <Button id="pc-parent-identity" className="sc-small-button" onClick={openAccount}>查看社区昵称设置</Button>
       </SectionCard>
       <SectionCard title="我的投稿与收藏" eyebrow="未来位置 · 尚未接入">
         <View className="pc-preview-placeholder"><Text className="sc-setting-name">目前还没有真实社区操作</Text><Text className="sc-body-muted">投稿入口仅供本地文本预览，不会发布、送审或保存云端帖子；收藏功能尚未接入。</Text></View>

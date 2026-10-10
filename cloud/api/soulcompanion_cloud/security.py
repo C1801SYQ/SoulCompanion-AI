@@ -147,6 +147,7 @@ class SecurityMiddleware:
                     "GET",
                     "POST",
                     "PATCH",
+                    "PUT",
                     "DELETE",
                 } or not requested_headers <= {"authorization", "content-type"}:
                     await fail(
@@ -160,7 +161,7 @@ class SecurityMiddleware:
                         "headers": [
                             (
                                 b"access-control-allow-methods",
-                                b"GET, POST, PATCH, DELETE",
+                                b"GET, POST, PATCH, PUT, DELETE",
                             ),
                             (
                                 b"access-control-allow-headers",

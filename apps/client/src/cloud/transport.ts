@@ -3,7 +3,7 @@ import type { RequestHandle } from '../services/types';
 import { CloudError, type AuthAdapter } from './types';
 import { safeCloudOrigin } from './url';
 export interface CloudWireResponse { status: number; data: unknown; headers: Record<string, unknown> }
-export interface CloudWireRequest { url: string; method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; headers: Record<string, string>; data?: string; timeoutMs: number }
+export interface CloudWireRequest { url: string; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; headers: Record<string, string>; data?: string; timeoutMs: number }
 export type CloudWire = (request: CloudWireRequest, respond: (response: CloudWireResponse) => void, fail: () => void) => { abort(): void };
 const taroWire: CloudWire = (request, respond, fail) => {
   const task = Taro.request({ url: request.url, method: request.method, header: request.headers, data: request.data, timeout: request.timeoutMs, dataType: 'text', responseType: 'text',
@@ -19,11 +19,16 @@ export class CloudApiTransport {
   constructor(private readonly baseUrl: string, private readonly auth: AuthAdapter, private readonly wire: CloudWire = taroWire, private readonly timeoutMs = 8000) {
     if (!safeCloudOrigin(baseUrl) || !Number.isFinite(timeoutMs) || timeoutMs < 10 || timeoutMs > 30000) throw new CloudError('not_configured');
   }
-  request<T>(method: CloudWireRequest['method'], path: string, parse: (value: unknown) => T, body?: Record<string, string>, allowEmpty = false): RequestHandle<T> {
+  request<T>(method: CloudWireRequest['method'], path: string, parse: (value: unknown) => T, body?: Record<string, string | null>, allowEmpty = false): RequestHandle<T> {
     const uuid = '[0-9a-fA-F-]{36}';
-    const route = new RegExp(`^/api/v2/(?:me|children(?:/${uuid})?|sessions(?:/${uuid}(?:/end)?)?|emotions|reports(?:/current)?)(?:\\?(?:child_profile_id|limit|offset|include_archived)=[A-Za-z0-9%-]+(?:&(?:child_profile_id|limit|offset|include_archived)=[A-Za-z0-9%-]+)*)?$`);
+    const route = new RegExp(`^/api/v2/(?:capabilities|parent-profile|me|children(?:/${uuid})?|sessions(?:/${uuid}(?:/end)?)?|emotions|reports(?:/current)?)(?:\\?(?:child_profile_id|limit|offset|include_archived)=[A-Za-z0-9%-]+(?:&(?:child_profile_id|limit|offset|include_archived)=[A-Za-z0-9%-]+)*)?$`);
     if (!route.test(path)) throw new CloudError('invalid');
-    if (body && Object.keys(body).some(key => !['nickname', 'display_name', 'child_profile_id', 'source_platform'].includes(key))) throw new CloudError('invalid');
+    const routePath = path.split('?')[0];
+    const allowed = routePath === '/api/v2/parent-profile' && method === 'PUT' ? ['nickname']
+      : routePath === '/api/v2/me' && method === 'PATCH' ? ['display_name']
+      : /^\/api\/v2\/children(?:\/[0-9a-fA-F-]{36})?$/.test(routePath) && (method === 'POST' || method === 'PATCH') ? ['nickname', 'age_band']
+      : routePath === '/api/v2/sessions' && method === 'POST' ? ['child_profile_id', 'source_platform'] : [];
+    if (body && Object.keys(body).some(key => !allowed.includes(key) || (body[key] === null && key !== 'age_band') || (body[key] !== null && typeof body[key] !== 'string'))) throw new CloudError('invalid');
     const encoded = body ? JSON.stringify(body) : undefined;
     if (encoded && encoded.length > 2048) throw new CloudError('invalid');
     const principal = this.auth.getPrincipal();

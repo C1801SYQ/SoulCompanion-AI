@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+from .family_identity import ChildAgeBand, normalize_community_nickname
+
 
 Name = Annotated[
     str,
@@ -23,6 +25,16 @@ class UserPatch(Contract):
 
 class ChildWrite(Contract):
     nickname: Name
+    age_band: ChildAgeBand | None = None
+
+
+class ParentProfileWrite(Contract):
+    nickname: Annotated[str, StringConstraints(strict=True)]
+
+    @field_validator("nickname")
+    @classmethod
+    def community_nickname(cls, value: str) -> str:
+        return normalize_community_nickname(value)
 
 
 class SessionCreate(Contract):
@@ -48,6 +60,19 @@ class ChildProfile(Contract):
     created_at: datetime
     updated_at: datetime
     status: Literal["active", "archived"]
+    age_band: ChildAgeBand | None = None
+
+
+class ParentCommunityProfile(Contract):
+    id: UUID
+    nickname: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class FamilyCapabilities(Contract):
+    child_age_band: bool
+    parent_profile: bool
 
 
 class Session(Contract):

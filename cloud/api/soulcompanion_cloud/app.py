@@ -22,8 +22,11 @@ from .models import (
     CurrentReport,
     EmptyBody,
     EmotionRecord,
+    FamilyCapabilities,
     Health,
     Paginated,
+    ParentCommunityProfile,
+    ParentProfileWrite,
     QueryRange,
     Readiness,
     Report,
@@ -147,6 +150,18 @@ def create_app(
     @app.patch("/api/v2/me", response_model=User)
     async def patch_me(body: UserPatch, user: UserDependency):
         return await service.update_me(user, body)
+
+    @app.get("/api/v2/capabilities", response_model=FamilyCapabilities)
+    async def capabilities(user: UserDependency):
+        return await service.family_capabilities()
+
+    @app.get("/api/v2/parent-profile", response_model=ParentCommunityProfile | None)
+    async def parent_profile(user: UserDependency):
+        return await service.parent_profile(user)
+
+    @app.put("/api/v2/parent-profile", response_model=ParentCommunityProfile)
+    async def put_parent_profile(body: ParentProfileWrite, user: UserDependency):
+        return await service.save_parent_profile(user, body)
 
     @app.get("/api/v2/children", response_model=Paginated[ChildProfile])
     async def children(

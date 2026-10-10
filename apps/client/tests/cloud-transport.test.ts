@@ -6,7 +6,7 @@ import * as parse from '../src/cloud/validation';
 vi.mock('@tarojs/taro', () => ({ default: { request: vi.fn() } }));
 const id = '11111111-1111-4111-8111-111111111111';
 const created = '2026-10-07T01:00:00+00:00';
-const child = { id, nickname: 'Synthetic profile', status: 'active', created_at: created, updated_at: created };
+const child = { id, nickname: 'Synthetic profile', age_band: null, status: 'active', created_at: created, updated_at: created };
 const tick = async () => { for (let index = 0; index < 6; index++) await Promise.resolve(); };
 function wire() { let respond!: (response: CloudWireResponse) => void; const abort = vi.fn(); const request: CloudWire = vi.fn((_, success) => { respond = success; return { abort }; }); return { request, abort, send: (status: number, data: unknown, headers: Record<string, unknown> = { 'content-type': 'application/json' }) => respond({ status, data: JSON.stringify(data), headers }) }; }
 async function setup(timeoutMs = 8000) { const auth = new FakeAuthAdapter(); await auth.signIn(); const mock = wire(); const transport = new CloudApiTransport('https://synthetic.test', auth, mock.request, timeoutMs); return { auth, mock, transport }; }

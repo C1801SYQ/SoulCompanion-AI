@@ -1,4 +1,5 @@
-import { CloudError, type ChildProfile, type CloudEmotion, type CloudPage, type CloudReport, type CloudSession, type CloudUser } from './types';
+import { AGE_BANDS } from '../community/constants';
+import { CloudError, type ChildAgeBand, type ChildProfile, type CloudCapabilities, type ParentCommunityProfile, type CloudEmotion, type CloudPage, type CloudReport, type CloudSession, type CloudUser } from './types';
 const invalid = (): never => { throw new CloudError('invalid'); };
 function object(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid(); }
 function text(value: unknown, max = 64): string { return typeof value === 'string' && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value) ? value : invalid(); }
@@ -8,8 +9,19 @@ function choice<T extends string>(value: unknown, allowed: readonly T[]): T { re
 function number(value: unknown, min: number, max: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : invalid(); }
 function integer(value: unknown, min: number, max: number): number { const result = number(value, min, max); return Number.isInteger(result) ? result : invalid(); }
 export function nickname(value: string): string { const result = text(value.trim()); return result.length ? result : invalid(); }
+export function childAgeBand(value: unknown): ChildAgeBand | null { return value === null ? null : choice(value, AGE_BANDS.map(item => item.value)); }
+/** Display names are not identifiers. Matching nicknames may belong to different parents. */
+export function parentNickname(value: string): string {
+  if (/\p{C}/u.test(value)) invalid();
+  const result = value.normalize('NFC').trim();
+  const length = Array.from(result).length;
+  return length >= 2 && length <= 24 && /^[\p{L}\p{M}\p{N} ·_-]+$/u.test(result) ? result : invalid();
+}
+export function capabilities(value: unknown): CloudCapabilities { const v = object(value); if (typeof v.child_age_band !== 'boolean' || typeof v.parent_profile !== 'boolean') invalid(); return { child_age_band: v.child_age_band as boolean, parent_profile: v.parent_profile as boolean }; }
+export function parentProfile(value: unknown): ParentCommunityProfile | null { if (value === null) return null; const v = object(value); return { id: cloudId(v.id), nickname: parentNickname(text(v.nickname)), created_at: date(v.created_at), updated_at: date(v.updated_at) }; }
+export function savedParentProfile(value: unknown): ParentCommunityProfile { return parentProfile(value) ?? invalid(); }
 export function user(value: unknown): CloudUser { const v = object(value); return { id: cloudId(v.id), display_name: text(v.display_name), status: choice(v.status, ['active', 'disabled']), created_at: date(v.created_at), updated_at: date(v.updated_at) }; }
-export function child(value: unknown): ChildProfile { const v = object(value); return { id: cloudId(v.id), nickname: nickname(text(v.nickname)), status: choice(v.status, ['active', 'archived']), created_at: date(v.created_at), updated_at: date(v.updated_at) }; }
+export function child(value: unknown): ChildProfile { const v = object(value); return { id: cloudId(v.id), nickname: nickname(text(v.nickname)), age_band: v.age_band === undefined ? null : childAgeBand(v.age_band), status: choice(v.status, ['active', 'archived']), created_at: date(v.created_at), updated_at: date(v.updated_at) }; }
 export function session(value: unknown): CloudSession { const v = object(value); const result: CloudSession = { id: cloudId(v.id), child_profile_id: cloudId(v.child_profile_id), source_platform: choice(v.source_platform, ['web', 'wechat', 'android_future']), started_at: date(v.started_at), ended_at: v.ended_at === null ? null : date(v.ended_at), status: choice(v.status, ['active', 'ended']), created_at: date(v.created_at) }; if ((result.status === 'active') !== (result.ended_at === null) || result.ended_at && Date.parse(result.ended_at) < Date.parse(result.started_at)) invalid(); return result; }
 export function emotion(value: unknown): CloudEmotion { const v = object(value); return { id: cloudId(v.id), child_profile_id: cloudId(v.child_profile_id), session_id: cloudId(v.session_id), timestamp: date(v.timestamp), category: text(v.category), confidence: number(v.confidence, 0, 1), valence: number(v.valence, -1, 1), arousal: number(v.arousal, 0, 1), source: choice(v.source, ['legacy_import', 'test_fixture', 'cloud_inference']), created_at: date(v.created_at) }; }
 export function report(value: unknown): CloudReport { const v = object(value); if (typeof v.summary !== 'string' || v.summary.length > 4096 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(v.summary)) invalid(); const result = { id: cloudId(v.id), child_profile_id: cloudId(v.child_profile_id), range_start: date(v.range_start), range_end: date(v.range_end), summary: v.summary as string, created_at: date(v.created_at) }; if (Date.parse(result.range_end) < Date.parse(result.range_start)) invalid(); return result; }

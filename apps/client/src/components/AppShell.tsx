@@ -16,16 +16,16 @@ export function AppShell({ page, children }: { page: PageName; children: ReactNo
   const familyTool = isFamilyTool(page);
   const primaryPage = primaryFor(page);
   const keyboardHeight = useNavigationKeyboardHeight();
-  useEffect(() => { store.setPrivateReadsEnabled(familyTool); }, [store, familyTool]);
-  useDidShow(() => store.setPrivateReadsEnabled(familyTool));
-  useDidHide(() => store.setPrivateReadsEnabled(false));
+  useEffect(() => { store.setPageScope(familyTool, page === 'settings'); }, [store, familyTool, page]);
+  useDidShow(() => store.setPageScope(familyTool, page === 'settings'));
+  useDidHide(() => store.setPageScope(false, false));
   const connectionLabels = { connecting: '连接中', online: '已连接', offline: '离线', error: '连接错误' };
   const [navigationError, setNavigationError] = useState('');
   function navigate(next: PrimaryPage) {
     if (next === page) return;
     setNavigationError('');
-    store.setPrivateReadsEnabled(false);
-    void navigatePrimary(next).catch(() => { store.setPrivateReadsEnabled(familyTool); setNavigationError('页面暂时无法打开，请再试一次。'); });
+    store.setPageScope(false, false);
+    void navigatePrimary(next).catch(() => { store.setPageScope(familyTool, page === 'settings'); setNavigationError('页面暂时无法打开，请再试一次。'); });
   }
   return <View className={`sc-shell pc-shell ${familyTool ? 'pc-shell--family' : 'pc-shell--public'}${keyboardHeight > 0 ? ' pc-shell--keyboard-open' : ''}`}>
     <View className="sc-rail">

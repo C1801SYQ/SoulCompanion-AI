@@ -1,6 +1,6 @@
 # 予怀 · SoulCompanion AI
 
-更新：2026-10-09。当前开发分支：`pc-01-community-prototype`；开发成果尚未合并到 `master`。
+更新：2026-10-10。当前开发分支：`pc-02-family-identity`；开发成果尚未合并到 `master`。
 
 予怀面向 **0～18 岁儿童家庭**，由成年家长和监护人使用，帮助交流育儿经验、理解孩子与改善亲子沟通。微信小程序是优先平台，H5 用于共享界面、开发预览与浏览器测试。默认首页为家长社区，浏览不要求诊断标签、购买机器人、订阅或先建儿童档案。
 
@@ -8,7 +8,9 @@
 
 Phase 01～04 的共享客户端、终端媒体采集及 CloudBase 云后端成果继续沿用。Phase 04 已完成实际部署、API 和 H5 官方 SDK 验收，云端保存账户、私有儿童档案及会话元数据；PC01 没有新增云资源。**V2 媒体上传、AI 推理和 Android APK 尚未实现，实体机器人暂停。**
 
-本项目不提供临床诊断或疗效判断，也不把商业计划中的技术、专家合作和财务陈述当作已实现能力。微信开发者工具和手机真机仍待验证。当前交付见 [PC01 报告](docs/parent-community/PC01_DELIVERY_REPORT.md)，云端历史证据见 [Phase 04 报告](docs/v2/PHASE04_DELIVERY_REPORT.md)。
+PC02 增加微信导航/键盘兼容、独立家长社区昵称及可选私有儿童年龄段的软件实现。**新云集合和函数更新尚待授权部署，当前云端不能按已上线功能描述。** 兼容性构建已获用户确认 DevTools 编译与页面切换正常，最终身份构建、真实微信登录和手机仍需人工验证。当前状态见 [PC02 报告](docs/parent-community/PC02_DELIVERY_REPORT.md)、[人工清单](docs/parent-community/WECHAT_MANUAL_CHECKLIST.md) 和 [云变更计划](docs/parent-community/PC02_CLOUD_CHANGE_PLAN.md)。
+
+本项目不提供临床诊断或疗效判断，也不把商业计划中的技术、专家合作和财务陈述当作已实现能力。[PC01 报告](docs/parent-community/PC01_DELIVERY_REPORT.md) 和 [Phase 04 报告](docs/v2/PHASE04_DELIVERY_REPORT.md) 保留各阶段的历史证据。
 
 ## 平台与技术栈
 
@@ -16,7 +18,7 @@ Phase 01～04 的共享客户端、终端媒体采集及 CloudBase 云后端成�
 | --- | --- | --- |
 | Web / 桌面浏览器 | Taro 4 + React 18 + TypeScript，四个家长入口与保留的家庭工具 | PC01 验证结果见交付报告；历史真实云端 H5 验收保留 |
 | 手机 Web | 同一 H5 客户端，移动底部导航与触控布局 | 浏览器移动视口回归通过；不代表所有手机浏览器和实体设备均已验收 |
-| 微信小程序 | Taro 微信构建、媒体适配器和官方 CloudBase 微信登录适配器 | PC01 编译通过，Phase 04 历史实际配置编译通过；DevTools、真机登录和设备权限仍 NOT TESTED |
+| 微信小程序 | 共享 Taro 页面、媒体适配器和官方 CloudBase 微信登录适配器 | PC02 含 SDK 的构建及官方 WXSS 编译通过；兼容性构建 DevTools 用户确认，最终身份/登录/真机仍待人工验证 |
 | Android | 规划复用客户端与 Web 媒体适配器 | 尚无 APK、原生封装或 Android 实机验收 |
 | 静态托管 | Cloudflare Pages 托管 H5 | 公开页面保持 `DEMO_ONLY`，不接入真实云端账户或数据 |
 | 云后端 | CloudBase HTTP 云函数 + 独立 FastAPI `/api/v2` | 实际部署、健康检查、元数据业务和用户隔离验收通过 |
@@ -68,7 +70,8 @@ flowchart TB
 已完成：
 
 - 四个主入口、六个年龄段与七类话题组合筛选、示例帖子详情、返回状态恢复和纯文本投稿预览；示例内容始终明确标注。
-- 米黄/柔灰的共享界面、桌面/移动导航和可访问控件；育儿知识、手动成长记录与未来公开社区身份有真实的未接入说明。
+- 米黄/柔灰的共享界面、桌面/移动导航和可访问控件；育儿知识、手动成长记录保持真实的未接入说明。
+- PC02 软件支持独立公开昵称、可选儿童年龄、身份切换同步隐藏草稿和能力探测；新持久化尚待云授权，界面不会冒充已保存。
 - 保留五个旧家庭工具、减少动态效果设置、DEMO 与错误/离线状态；公共路由暂停私有请求，账户切换继续清理私有数据和内存草稿。
 - 用户主动开启的本地摄像头/麦克风会话、预览/采样及生命周期清理。
 - CloudBase Web 登录/退出、用户昵称、儿童档案新增/修改/选择/归档。
@@ -78,7 +81,7 @@ flowchart TB
 当前未实现或未验证：
 
 - **未实现：真实社区发布/审核/互动、来源核对的知识文章、手动成长记录存储、V2 媒体上传、AI 推理与 Android APK。** 情绪记录和报告接口只读，真实空数据不会生成结论。
-- **待人工验证：微信 DevTools、手机微信登录、权限与实体设备行为。** 构建成功和浏览器虚拟设备测试不能替代真机验证。
+- **待人工验证：最终身份构建的微信 DevTools、手机微信登录、权限与实体设备行为。** 已确认的兼容性编译、构建成功和浏览器虚拟设备测试不能替代真机验证。
 - 尚未发布真实云账户的公开生产客户端，未迁移本地 SQLite 数据，未合并 `master`。
 
 | 阶段 | 已记录主题 / 分支 | 当前进度 |
@@ -94,12 +97,12 @@ flowchart TB
 | Phase 09 | `09-cloud-release` · 云端发布 | 规划，未开始 |
 | Phase 10 | `10-release-candidate` · 候选发布版本 | 规划，未开始 |
 
-上述 Phase 编号来自 [Phase 01 记录](docs/v2/01-product-baseline.md)，Phase 05～10 是历史规划，均未开始；当前产品优先级采用下面的家长社区路线。本轮仅完成 PC01，不启动 PC02。
+上述 Phase 编号来自 [Phase 01 记录](docs/v2/01-product-baseline.md)，Phase 05～10 是历史规划，均未开始；当前产品优先级采用下面的家长社区路线。本轮范围为 PC02，不启动 PC03。
 
 | 社区路线 | 主题 | 状态 |
 | --- | --- | --- |
-| PC01 | 家长社区产品重定位与可视原型 | 当前交付；真实发布与审核未实现 |
-| PC02 | 微信身份与家庭资料 | 规划 |
+| PC01 | 家长社区产品重定位与可视原型 | 已交付并保留；真实发布与审核未实现 |
+| PC02 | 微信身份与家庭资料 | 软件实现及本地验收；新云持久化待授权、最终微信/真机待人工验收 |
 | PC03 | 社区数据库与审核后端 | 规划 |
 | PC04 | 真实社区与运营闭环 | 规划 |
 | PC05 | 育儿知识与私有成长记录 | 规划 |
@@ -114,7 +117,7 @@ flowchart TB
 ### 1. 获取当前开发分支并安装依赖
 
 ```powershell
-git clone --branch pc-01-community-prototype https://github.com/C1801SYQ/SoulCompanion-AI.git
+git clone --branch pc-02-family-identity https://github.com/C1801SYQ/SoulCompanion-AI.git
 cd SoulCompanion-AI
 python -m venv .venv
 & ./.venv/Scripts/python.exe -m pip install -r requirements-web.txt -r requirements-dev.txt -r cloud/api/requirements-cloud.txt

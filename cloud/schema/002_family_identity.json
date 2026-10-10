@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "env_id": "soulcompanion-dev-d0dzo6f2a24211",
+  "region": "ap-shanghai",
+  "owner": "SoulCompanion-AI/pc02",
+  "marker_id": "pc02-family-identity",
+  "acl": "ADMINONLY",
+  "base_schema": {
+    "marker_id": "phase04",
+    "owner": "SoulCompanion-AI/phase04",
+    "version": 1,
+    "checksum": "7e23a3c17a1551df1d5a3c7c7c9deb8903f9ea7430fbd38e4fa482e85159fa49"
+  },
+  "child_profile_extension": {
+    "collection": "sc_v2_child_profiles",
+    "field": "age_band",
+    "optional": true,
+    "nullable": true,
+    "values": ["0-2", "3-5", "6-8", "9-12", "13-15", "16-18"],
+    "backfill": false,
+    "indexes": []
+  },
+  "collections": [
+    {
+      "name": "sc_v2_parent_profiles",
+      "purpose": "Adult-selected community nickname; separate public id; private owner_user_id; created_at and updated_at; no child or provider identity fields",
+      "indexes": [
+        {
+          "name": "pc02_parent_owner_unique",
+          "unique": true,
+          "keys": [["owner_user_id", "1"]]
+        }
+      ]
+    }
+  ]
+}

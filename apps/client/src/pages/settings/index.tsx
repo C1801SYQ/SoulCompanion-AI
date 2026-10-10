@@ -9,6 +9,7 @@ import { useCompanion } from '../../state/AppProvider';
 import { useSession } from '../../state/SessionProvider';
 import { deviceText } from '../../components/mediaText';
 import { CloudAccount } from '../../components/CloudAccount';
+import { ParentCommunityIdentity } from '../../components/ParentCommunityIdentity';
 
 function SettingsPage() {
   const { api, source, setSource, motionEnabled, setMotionEnabled, demoOnly } = useCompanion();
@@ -28,6 +29,7 @@ function SettingsPage() {
     <View className="sc-settings-grid">
       <View className="sc-settings-column">
         <CloudAccount />
+        <ParentCommunityIdentity />
         <SectionCard title="数据来源" eyebrow="你可以随时选择">
           <View className="sc-mode-options"><Button id="mode-real" className={`sc-mode-option ${source === 'real' ? 'sc-mode-option--selected' : ''}`} aria-pressed={source === 'real'} disabled={demoOnly} onClick={() => chooseSource('real')}><View className="sc-mode-option-heading"><Text>REAL · 真实数据</Text><Text className="sc-mode-check">{source === 'real' ? '已选择' : demoOnly ? '此构建不可用' : '选择'}</Text></View><Text className="sc-body-muted">读取配置的本机服务，未连接时显示离线。</Text></Button><Button id="mode-demo" className={`sc-mode-option ${source === 'demo' ? 'sc-mode-option--selected' : ''}`} aria-pressed={source === 'demo'} onClick={() => chooseSource('demo')}><View className="sc-mode-option-heading"><Text>DEMO · 合成示例</Text><Text className="sc-mode-check">{source === 'demo' ? '已选择' : '选择'}</Text></View><Text className="sc-body-muted">情绪和报告为合成示例，不发送真实数据请求。仍可主动体验本地摄像头和麦克风；设备预览不等于情绪推理。</Text></Button></View>
           <Text className="sc-setting-footnote">切换来源会结束本客户端当前采集。任何数据模式都可再次主动开始本地预览。另行运行的旧设备服务需要单独停止。</Text>

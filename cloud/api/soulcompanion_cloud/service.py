@@ -12,7 +12,10 @@ from .models import (
     Contract,
     CurrentReport,
     EmotionRecord,
+    FamilyCapabilities,
     Paginated,
+    ParentCommunityProfile,
+    ParentProfileWrite,
     Report,
     Session,
     SessionCreate,
@@ -70,6 +73,36 @@ class ApplicationService:
         )
         return public_record(User, record)
 
+    async def family_capabilities(self) -> FamilyCapabilities:
+        enabled = await self.repository.family_identity_ready()
+        return FamilyCapabilities(child_age_band=enabled, parent_profile=enabled)
+
+    async def require_family_identity(self) -> None:
+        if not await self.repository.family_identity_ready():
+            raise CloudError(
+                503,
+                "feature_unavailable",
+                "Family identity is not enabled in this environment.",
+            )
+
+    async def parent_profile(self, user: User) -> ParentCommunityProfile | None:
+        await self.require_family_identity()
+        record = await self.repository.get_parent_profile(str(user.id))
+        return (
+            public_record(ParentCommunityProfile, record)
+            if record is not None
+            else None
+        )
+
+    async def save_parent_profile(
+        self, user: User, body: ParentProfileWrite
+    ) -> ParentCommunityProfile:
+        await self.require_family_identity()
+        return public_record(
+            ParentCommunityProfile,
+            await self.repository.save_parent_profile(str(user.id), body.nickname),
+        )
+
     async def child(self, user: User, child_id: UUID) -> ChildProfile:
         return public_record(
             ChildProfile,
@@ -77,14 +110,18 @@ class ApplicationService:
         )
 
     async def create_child(self, user: User, body: ChildWrite) -> ChildProfile:
+        if "age_band" in body.model_fields_set:
+            await self.require_family_identity()
         now = utc_now()
-        record = {
+        record: dict[str, Any] = {
             "id": str(uuid4()),
             "nickname": body.nickname,
             "status": "active",
             "created_at": now,
             "updated_at": now,
         }
+        if "age_band" in body.model_fields_set:
+            record["age_band"] = body.age_band
         return public_record(
             ChildProfile,
             await self.repository.create_owned("children", record, str(user.id)),
@@ -94,11 +131,16 @@ class ApplicationService:
         self, user: User, child_id: UUID, body: ChildWrite
     ) -> ChildProfile:
         await self.child(user, child_id)
+        if "age_band" in body.model_fields_set:
+            await self.require_family_identity()
+        changes: dict[str, Any] = {"nickname": body.nickname, "updated_at": utc_now()}
+        if "age_band" in body.model_fields_set:
+            changes["age_band"] = body.age_band
         record = await self.repository.update_owned(
             "children",
             str(child_id),
             str(user.id),
-            {"nickname": body.nickname, "updated_at": utc_now()},
+            changes,
         )
         return public_record(ChildProfile, record)
 
@@ -164,7 +206,7 @@ class ApplicationService:
         child_profile_id: UUID | None = None,
         include_archived: bool = False,
         range_start: datetime | None = None,
-        range_end: datetime | None = None
+        range_end: datetime | None = None,
     ) -> RecordPage:
         filters: dict[str, Any] = {}
         if child_profile_id is not None:
