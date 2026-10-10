@@ -2,7 +2,7 @@
 
 更新：2026-10-10。
 
-状态：可执行本地软件测试 AUTOMATED PASS；真实云增量 BLOCKED（待明确授权），未部署。最终微信身份构建和手机验收仍待用户参与，不能将此阶段描述为全部真实微信验收完成。
+状态：可执行本地软件测试及本次 GitHub Actions AUTOMATED PASS，代码已推送；真实云增量 BLOCKED（待明确授权），未部署。最终微信身份构建和手机验收仍待用户参与，不能将此阶段描述为全部真实微信验收完成。
 
 ## PC02_CURRENT_STATE_AUDIT
 
@@ -57,7 +57,7 @@
 | 独立 Python / 增量工具审查 | APPROVE |
 | 独立客户端 / 安全审查 | APPROVE；保存/读取状态与同步草稿隔离的 HIGH/MEDIUM 已修复并独立复核 |
 | 正式 TypeScript reviewer | BLOCKED：规定 ESLint 命令因仓库无配置退出1；未引入新依赖，不能写成 APPROVE |
-| GitHub Actions | 本阶段提交尚未推送，NOT TESTED；历史 fd3f375 的9项 job成功不代表本次 CI |
+| GitHub Actions | AUTOMATED PASS：[run 38023145582](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38023145582)，身份提交 `b39a66147c2ed83fbe3a940b002114b8ebe1cdfd` 的全部 9 项 job 成功 |
 | REAL CLOUD PASS | Phase04 历史证据保留；PC02 新持久化 NOT TESTED / 待授权 |
 | WECHAT DEVTOOLS PASS | 兼容性构建由用户确认；最终身份构建 MANUAL_VERIFICATION_REQUIRED |
 | PHYSICAL DEVICE PASS | NOT TESTED |
@@ -66,7 +66,16 @@
 
 ## 已知限制与交付回执
 
-最终代码、安全和 Python 审查与全部可执行本地回归已完成。身份功能提交、推送 SHA 与本次 GitHub Actions 结果将在交付回执核实；旧 fd3f375 的 CI 不是本阶段结果。
+最终代码、安全和 Python 审查与全部可执行本地回归已完成。代码已推送到 `origin/pc-02-family-identity`，本地与远端代码提交 SHA 一致；本次 GitHub Actions 已完成，全部 9 项 job 成功。
+
+| 交付回执 | 已核实结果 |
+| --- | --- |
+| 微信兼容性代码提交 | `03a68adf12eddc498711f1ef5ff470fbca00cafa` |
+| 身份与家庭资料代码提交 | `b39a66147c2ed83fbe3a940b002114b8ebe1cdfd` |
+| 远端代码提交 / 分支 | `b39a66147c2ed83fbe3a940b002114b8ebe1cdfd` / `origin/pc-02-family-identity` |
+| GitHub Actions | [run 38023145582](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38023145582)：completed / success，9 项 job 全部通过 |
+
+以上 SHA 标识已验收的代码交付。本报告的回执更新可另作后续文档提交；该文档提交不替代上述代码 SHA，也不将尚未执行的云部署或微信真机验收记为通过。
 
 正式 TypeScript reviewer 因缺少 ESLint 配置未完成；现有 typecheck、全量单测、Ruff、JS 语法检查及独立 code-reviewer/安全审查均通过，没有安装新 lint 依赖来改变项目基线。Windows 首次非终端 E2E 启动无诊断退出，正式终端模式重跑及最终集成运行均完成全部断言，未修改或禁用测试。
 
