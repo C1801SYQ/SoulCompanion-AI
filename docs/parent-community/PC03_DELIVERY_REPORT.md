@@ -99,7 +99,8 @@ Node.js 24.15.0；Python3.12.4；Chromium 浏览器测试使用合成内容与�
 | 最终 Python/安全独立审查 | PASS；安全独立执行 schema/roles/deploy 280 项 Fake 全通过，无遗留 CRITICAL/HIGH/MEDIUM |
 | 既有 acceptance / hardware smoke | PASS；hardware 为 FAKE 软件接口，真实设备 NOT TESTED |
 | git diff --check / 相对文档路径 | PASS；26 相对链接目标存在，提交前复核 staged 文件 |
-| 软件提交 SHA / 远端 SHA | 本地工作尚未提交推送，完成后登记独立回执 |
-| GitHub Actions | 尚未触发 PC03 软件提交；不得继承 PC02 CI 成功 |
+| 软件提交 SHA | `c7d4cec3cd7de744630d5636792ad1097912ba25` · `feat: add parent community domain and moderation backend` |
+| 软件远端回执 | 普通 push 后 `ls-remote origin pc-03-community-backend` 独立核实为 `c7d4cec3cd7de744630d5636792ad1097912ba25` |
+| 软件 GitHub Actions | [run 38109593239](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38109593239)：completed / success，9/9 job 全通过；含 Linux Python3.11 云回归与包构建 |
 
-文档最终回执作为后续独立提交，SHA 由 Git 与交付消息报告，不在自身正文伪造自引用。软件提交与文档回执分开记录。
+本最终文档回执作为后续独立提交，最新分支 SHA 由 Git 与交付消息报告，不在自身正文伪造自引用。上表记录软件提交的实际验收，文档提交不改变软件代码。PC03 本地授权范围已完成，真实云增量/部署/合成验收等待用户对具体方案的独立确认。
