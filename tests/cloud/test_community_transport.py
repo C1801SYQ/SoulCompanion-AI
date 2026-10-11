@@ -72,9 +72,14 @@ class CommunityWireServer:
                 rows = [deepcopy(record) for record in records.values() if evaluate(record, json.loads(request.url.params["query"]))]
                 if "order" in request.url.params:
                     order = json.loads(request.url.params["order"])
-                    assert len(order) == 2 and order[1] == {"id": "desc"}
-                    field = next(iter(order[0]))
-                    assert order[0][field] == "desc"
+                    if (not isinstance(order, list) or len(order) != 2
+                            or order[1] != {"field": "id", "direction": "desc"}
+                            or not isinstance(order[0], dict)
+                            or set(order[0]) != {"field", "direction"}
+                            or order[0]["direction"] != "desc"):
+                        return httpx.Response(500, json={"code": "DATABASE_REQUEST_FAILED"})
+                    field = order[0]["field"]
+                    assert field in {"created_at", "updated_at", "published_at"}
                     rows.sort(key=lambda row: (row[field], row["id"]), reverse=True)
                 return httpx.Response(200, json={"list": rows[:limit]})
             body = json.loads(request.content)
@@ -119,6 +124,18 @@ def test_readiness_batch_is_read_only_and_exact_without_private_queries():
         assert request.method == "GET"
         assert SCHEMA_COLLECTION in request.url.path
         assert set(json.loads(request.url.params["query"])["_id"]["$in"]) == {row[0] for row in COMMUNITY_BASE_MARKERS} | {COMMUNITY_MARKER_ID}
+    run_with_server(scenario)
+
+
+@pytest.mark.parametrize("time_field", ["created_at", "updated_at", "published_at"])
+def test_empty_sorted_query_uses_cloudbase_field_direction_contract(time_field):
+    """Actual CloudBase rejects Mongo-style order even on an empty collection."""
+    async def scenario(repo, server):
+        assert await repo.list("content", {"kind": "post", "status": "published"}, time_field, 2) == []
+        assert json.loads(server.requests[0].url.params["order"]) == [
+            {"field": time_field, "direction": "desc"},
+            {"field": "id", "direction": "desc"},
+        ]
     run_with_server(scenario)
 
 

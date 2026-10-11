@@ -195,7 +195,10 @@ class CommunityDocumentRepository(QuotaMixin):
         if time_field is not None:
             if time_field not in SORT_FIELDS:
                 raise unavailable()
-            params["order"] = json.dumps([{time_field: "desc"}, {"id": "desc"}], separators=(",", ":"))
+            params["order"] = json.dumps([
+                {"field": time_field, "direction": "desc"},
+                {"field": "id", "direction": "desc"},
+            ], separators=(",", ":"))
         data = await self.transport._request("GET", self._documents(kind), params=params)
         rows = data.get("list")
         if not isinstance(rows, list) or len(rows) > limit or any(not isinstance(row, dict) for row in rows):
