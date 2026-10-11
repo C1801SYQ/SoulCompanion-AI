@@ -74,6 +74,17 @@
 .pc-compose-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
 .pc-draft-title { display: block; font-size: 1.5em; font-weight: 600; line-height: 1.6; margin: 16px 0; white-space: pre-wrap; }
 
+// Shared real community and protected workspace; no hover-only actions or motion.
+.pc-mode-note, .pc-account-panel, .pc-feedback, .pc-confirm-panel, .pc-mutation-status { display: flex; flex-direction: column; gap: 12px; padding: 18px; margin: 20px 0; border: 1px solid var(--sc-boundary); border-radius: 12px; background: var(--sc-surface); }
+.pc-content-status { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 12px; margin: 8px 0; border: 1px solid var(--sc-boundary); border-radius: 8px; color: var(--sc-primary); background: var(--sc-mist); }
+.pc-interactions, .pc-mine-tabs, .pc-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
+.pc-comment-list, .pc-owner-list { display: flex; flex-direction: column; gap: 16px; margin: 20px 0; }
+.pc-comment-card, .pc-owned-card { display: flex; flex-direction: column; min-width: 0; gap: 12px; padding: 20px; border: 1px solid var(--sc-boundary); border-radius: 12px; background: var(--sc-surface); }
+.pc-comment-form { margin: 24px 0; }
+.pc-textarea--compact { min-height: 120px; height: 120px; }
+.pc-history-line { display: block; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; font-size: .875em; line-height: 1.9; margin: 8px 0; }
+.pc-owned-card .pc-compose-actions, .pc-account-panel .pc-compose-actions { margin-top: 8px; }
+
 @media (max-width: 1200px) {
   .pc-community-layout { grid-template-columns: minmax(0, 1fr); }
   .pc-aside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 4px; }

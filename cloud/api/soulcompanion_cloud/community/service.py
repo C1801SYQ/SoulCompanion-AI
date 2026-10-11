@@ -16,7 +16,8 @@ from ..repository import CloudRepository
 from .models import (
     CommentCreate, CommunityTopic, ContentKind, ContentReportCreate, ContentReportReceipt,
     ContentReportResolve, ContentReportStatus, ContentStatus,
-    ModerationAction, OwnedComment, OwnedPost, PostCreate, PostPatch, RelationReceipt,
+    ModerationAction, OwnedComment, OwnedContentFeedback, OwnedPost, PostCreate, PostPatch,
+    PostRelationState, RelationReceipt,
     PublicComment, PublicPost, canonical_id, canonical_time, plain_text,
 )
 from .pagination import PageResult, cursor_query, normalize_limit, page
@@ -554,6 +555,22 @@ class CommunityService:
         await self.require_ready()
         return content_dto(await self._owned_content(owner, kind, identifier), owned=True)
 
+    async def get_owned_feedback(self, owner: str, kind: ContentKind, identifier: str) -> CommunityRecord:
+        await self.require_ready()
+        record = await self._owned_content(owner, kind, identifier)
+        # Ownership precedes validation and projection, including malformed foreign records.
+        latest = next((event for event in reversed(record["audit"])
+                       if event["target_revision"] == record["content_revision"]
+                       and event["action"] in {"approve", "reject", "hide"}), None)
+        feedback = None if latest is None else {
+            "action": latest["action"], "reason": latest["reason"], "at": latest["at"],
+            "content_revision": latest["target_revision"],
+        }
+        return OwnedContentFeedback(
+            target_type=kind, target_id=record["id"], content_revision=record["content_revision"],
+            status=record["status"], feedback=feedback,
+        ).model_dump(mode="json")
+
     async def _create(self, owner: str, kind: ContentKind, body: CommunityRecord, key: str) -> tuple[CommunityRecord, bool]:
         key = idempotency_key(key)
         self._identifier(owner)
@@ -644,6 +661,26 @@ class CommunityService:
         if await self.storage.cas("content", identifier, self._expected(record, owner), changes) is not True:
             raise conflict()
         return None
+
+    async def get_relation_state(self, owner: str, post_id: str) -> CommunityRecord:
+        await self.require_ready()
+        self._identifier(owner)
+        await self._public_post(post_id)
+        active: dict[RelationKind, bool] = {}
+        kinds: tuple[RelationKind, RelationKind] = ("like", "bookmark")
+        for kind in kinds:
+            identifier = relation_id(kind, owner, post_id)
+            record = await self.storage.get("relations", identifier)
+            if record is None:
+                active[kind] = False
+                continue
+            validate_relation(record)
+            expected = {"_id": identifier, "id": identifier, "kind": kind, "owner_id": owner, "post_id": post_id}
+            if any(record.get(field) != value for field, value in expected.items()):
+                raise unavailable()
+            active[kind] = record["active"]
+        await self._public_post(post_id)
+        return PostRelationState(post_id=post_id, liked=active["like"], bookmarked=active["bookmark"]).model_dump()
 
     async def set_relation(self, owner: str, post_id: str, kind: RelationKind, active: bool) -> CommunityRecord:
         await self.require_ready()

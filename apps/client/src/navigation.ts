@@ -3,7 +3,7 @@ import { dismissKeyboard } from './platform/keyboard';
 
 export type PrimaryPage = 'community' | 'knowledge' | 'growth' | 'profile';
 export type ToolPage = 'home' | 'session' | 'insights' | 'reports' | 'settings';
-export type PageName = PrimaryPage | ToolPage | 'community-detail' | 'community-compose';
+export type PageName = PrimaryPage | ToolPage | 'community-detail' | 'community-compose' | 'community-mine' | 'ops';
 export const PRIMARY_NAVIGATION: ReadonlyArray<{ page: PrimaryPage; label: string; caption: string; icon: string }> = [
   { page: 'community', label: '社区', caption: '一起聊聊日常', icon: 'session' },
   { page: 'knowledge', label: '育儿知识', caption: '找到适合的内容', icon: 'reports' },
@@ -17,6 +17,7 @@ export const FAMILY_TOOLS: ReadonlyArray<{ page: ToolPage; label: string }> = [
 export function isFamilyTool(page: PageName): page is ToolPage { return FAMILY_TOOLS.some(item => item.page === page); }
 export function primaryFor(page: PageName): PrimaryPage {
   if (page === 'community-detail' || page === 'community-compose') return 'community';
+  if (page === 'community-mine' || page === 'ops') return 'profile';
   if (isFamilyTool(page)) return page === 'settings' ? 'profile' : 'growth';
   return page;
 }
@@ -48,7 +49,7 @@ export function navigatePrimary(page: PrimaryPage): Promise<void> {
 }
 /** Public details, drafts and family tools use a page frame that can be returned from. */
 export function openPage(url: string): Promise<void> {
-  if (!/^\/pages\/(?:community\/(?:detail(?:\?id=[a-zA-Z0-9_-]{1,80})?|compose)|(?:home|session|insights|reports|settings)\/index)$/.test(url)) {
+  if (!/^\/pages\/(?:community\/(?:detail(?:\?id=[a-zA-Z0-9_-]{1,80})?|compose(?:\?id=[a-f0-9-]{36})?|mine(?:\?tab=(?:posts|comments|bookmarks))?)|ops\/index|(?:home|session|insights|reports|settings)\/index)$/.test(url)) {
     return Promise.reject(new Error('Unsupported local destination'));
   }
   return transition(() => Taro.navigateTo({ url }));

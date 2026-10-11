@@ -97,6 +97,37 @@ class RelationReceipt(CommunityContract):
     active: Annotated[bool, Field(strict=True)]
 
 
+class PostRelationState(CommunityContract):
+    post_id: StrictText
+    liked: Annotated[bool, Field(strict=True)]
+    bookmarked: Annotated[bool, Field(strict=True)]
+
+    @field_validator("post_id")
+    @classmethod
+    def post_identifier(cls, value: str) -> str:
+        return canonical_id(value)
+
+
+class ModerationFeedback(CommunityContract):
+    action: Literal["approve", "reject", "hide"]
+    reason: StrictText
+    at: UtcTime
+    content_revision: PositiveRevision
+
+
+class OwnedContentFeedback(CommunityContract):
+    target_type: ContentKind
+    target_id: StrictText
+    content_revision: PositiveRevision
+    status: ContentStatus
+    feedback: ModerationFeedback | None
+
+    @field_validator("target_id")
+    @classmethod
+    def target_identifier(cls, value: str) -> str:
+        return canonical_id(value)
+
+
 ContentReportReason = Literal["privacy", "harassment", "unsafe", "spam", "other"]
 ContentReportStatus = Literal["open", "resolved", "dismissed"]
 

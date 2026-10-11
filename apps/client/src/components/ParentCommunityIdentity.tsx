@@ -24,11 +24,11 @@ export function ParentCommunityIdentity() {
     const version = form.version();
     void dismissKeyboard().catch(() => undefined);
     const saved = await store.updateParentProfile(draft);
-    form.complete(version, current => saved ? { draft: '', message: '社区昵称已由云端确认保存。社区帖子仍为示例，真实投稿尚未开放。' } : { ...current, message: '保存未确认，输入已保留，请检查连接后重试。' });
+    form.complete(version, current => saved ? { draft: '', message: '社区昵称已由云端确认保存。投稿入口在社区页面；真实内容需要经过人工审核。' } : { ...current, message: '保存未确认，输入已保留，请检查连接后重试。' });
   }
   return <SectionCard title="公开社区昵称" eyebrow="自主选择 · 与私有家庭档案分开">
-    <Text className="sc-body-muted">未来社区作者只使用你主动填写的公开昵称。不会自动读取微信头像或昵称，也不会公开账号标识、电话、邮箱或孩子信息。</Text>
-    {!signedIn ? <EmptyState title="登录后可设置社区昵称" detail="浏览示例社区不需要登录，也不需要创建儿童档案。" /> : !available ?
+    <Text className="sc-body-muted">社区作者只使用你主动填写的公开昵称。不会自动读取微信头像或昵称，也不会公开账号标识、电话、邮箱或孩子信息。</Text>
+    {!signedIn ? <EmptyState title="登录后可设置社区昵称" detail="浏览公开社区不需要登录，也不需要创建儿童档案。" /> : !available ?
       <View id="cloud-parent-load-status" role="status">
         <EmptyState title={state.parentProfileStatus === 'loading' ? '正在读取社区资料' : state.parentProfileStatus === 'error' ? '社区昵称读取尚未确认' : state.parentProfileStatus === 'idle' ? '社区资料尚未读取' : '社区昵称暂未开放保存'}
           detail={state.parentProfileStatus === 'loading' ? '读取完成前不能保存昵称，也不会把等待中的结果当作未设置。' : state.parentProfileStatus === 'error' ? '请重试读取，确认当前账号的社区资料后再修改昵称。' : state.parentProfileStatus === 'idle' ? '请主动读取当前账号的社区资料。' : '当前云端尚未确认独立社区资料功能可用。这里不会用本地示例冒充已保存资料。'} />

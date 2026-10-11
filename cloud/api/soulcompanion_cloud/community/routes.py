@@ -9,7 +9,8 @@ from ..models import User
 from .models import (
     CommentCreate, CommunityPage, CommunityTopic, ContentReportCreate, ContentReportReceipt,
     ContentReportResolve, ContentReportStatus, ContentStatus, EmptyCommunityBody, ModerationAction,
-    OwnedComment, OwnedPost, PostCreate, PostPatch, PublicComment, PublicPost, RelationReceipt,
+    OwnedComment, OwnedContentFeedback, OwnedPost, PostCreate, PostPatch, PostRelationState,
+    PublicComment, PublicPost, RelationReceipt,
 )
 from .pagination import PageResult
 from .service import CommunityRecord, CommunityService
@@ -78,6 +79,14 @@ def register_routes(
     @router.get("/me/community/comments", response_model=CommunityPage[OwnedComment])
     async def my_comments(user: Authenticated, limit: Limit = 20, cursor: Cursor = None) -> PageResult[CommunityRecord]:
         return await service.list_owned(str(user.id), "comment", limit, cursor)
+
+    @router.get("/me/community/posts/{post_id}/relations", response_model=PostRelationState)
+    async def my_relations(post_id: str, user: Authenticated) -> CommunityRecord:
+        return await service.get_relation_state(str(user.id), post_id)
+
+    @router.get("/me/community/{target_type}/{target_id}/feedback", response_model=OwnedContentFeedback)
+    async def my_feedback(target_type: TargetType, target_id: str, user: Authenticated) -> CommunityRecord:
+        return await service.get_owned_feedback(str(user.id), "post" if target_type == "posts" else "comment", target_id)
 
     @router.api_route("/community/posts/{post_id}/like", methods=["PUT", "DELETE"], response_model=RelationReceipt)
     async def like(post_id: str, request: Request, user: Authenticated, body: EmptyCommunityBody | None = Body(default=None)) -> CommunityRecord:

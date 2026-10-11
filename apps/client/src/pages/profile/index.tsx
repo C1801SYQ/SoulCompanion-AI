@@ -7,13 +7,16 @@ import { SectionCard, StatusPill } from '../../components/Primitives';
 import type { AuthStatus } from '../../cloud/types';
 import { openPage } from '../../navigation';
 import { useCloud } from '../../state/CloudProvider';
+import { useCommunity } from '../../state/CommunityProvider';
+import { CommunityModeNote } from '../../community/components';
+import { CommunityAccountPanel, useCommunityIdentity } from '../../community/AccountPanel';
 
 const accountLabels: Record<AuthStatus, string> = {
   signed_out: '未登录', signing_in: '正在登录', signed_in: '已登录',
   expired: '登录已失效', offline: '账号连接暂时不可用', error: '账号状态暂时不可用',
 };
 
-function ProfilePage() {
+function DemoProfilePage() {
   // Public account entry reads only authentication status, never private records or principal IDs.
   const { state } = useCloud();
   const accountLabel = state.enabled ? accountLabels[state.auth.status] : '云端账号尚未配置';
@@ -24,6 +27,7 @@ function ProfilePage() {
   }
 
   return <AppShell page="profile">
+    <CommunityModeNote mode="demo" />
     <PageHeader eyebrow="我的 · 你的予怀空间" title="按自己的节奏，安心交流。" description="这里为成年家长和监护人保留账号与隐私入口。未登录，也可以浏览社区示例和知识分类。" />
     <View className="pc-profile-card"><View><Text className="sc-setting-name">当前账号状态</Text><Text className="sc-body-muted">这里只显示登录状态，不读取私有家庭资料，也不展示内部身份编号。</Text></View><StatusPill id="pc-account-status" tone={state.enabled && state.auth.status === 'signed_in' ? 'good' : 'quiet'}>{accountLabel}</StatusPill></View>
     <View className="pc-support-grid">
@@ -44,6 +48,40 @@ function ProfilePage() {
       </SectionCard>
     </View>
   </AppShell>;
+}
+
+function RealProfilePage() {
+  const { state } = useCloud();
+  const identity = useCommunityIdentity();
+  const [navigationError, setNavigationError] = useState('');
+  function open(url: string) {
+    setNavigationError('');
+    void openPage(url).catch(() => setNavigationError('暂时无法打开页面，请再试一次。'));
+  }
+  return <AppShell page="profile">
+    <CommunityModeNote mode="real" />
+    <PageHeader eyebrow="我的 · 你的予怀空间" title="按自己的节奏，安心交流。" description="成年家长和监护人的社区空间。未登录也可以浏览公开帖子，参与交流时再主动登录。" />
+    <View className="pc-profile-card"><View><Text className="sc-setting-name">当前账号状态</Text><Text className="sc-body-muted">只显示登录状态和主动设置的公开昵称，不读取儿童档案、报告或内部身份编号。</Text></View><StatusPill id="pc-account-status" tone={state.auth.status === 'signed_in' ? 'good' : 'quiet'}>{accountLabels[state.auth.status]}</StatusPill></View>
+    <CommunityAccountPanel identity={identity} />
+    <View className="pc-support-grid">
+      <SectionCard title="我的社区内容" eyebrow="仅当前账号可见">
+        <Text className="sc-body-muted">查看投稿和评论的当前审核状态、反馈，编辑或撤回本人内容；收藏仅显示当前仍公开的帖子。</Text>
+        <View className="pc-interactions"><Button id="pc-my-posts" className="pc-action" onClick={() => open('/pages/community/mine?tab=posts')}>我的投稿</Button><Button id="pc-my-comments" className="pc-action" onClick={() => open('/pages/community/mine?tab=comments')}>我的评论</Button><Button id="pc-my-bookmarks" className="pc-action" onClick={() => open('/pages/community/mine?tab=bookmarks')}>我的收藏</Button></View>
+      </SectionCard>
+      <SectionCard title="账号与私有家庭档案" eyebrow="另行主动进入后查看">
+        <Text className="sc-body-muted">家庭昵称和儿童档案不会作为社区公开作者身份，也不是浏览或投稿的门槛。只在主动进入家庭工具后读取。</Text><Button id="pc-private-account" className="pc-action" onClick={() => open('/pages/settings/index')}>账号与私有档案</Button>
+      </SectionCard>
+      <SectionCard title="隐私与自主选择" eyebrow="由你决定分享什么">
+        <Text className="sc-body-muted">社区不自动读取儿童档案或私有报告，不申请摄像头与麦克风权限。公开昵称不使用账号标识、微信 OpenID、电话、邮箱或孩子姓名。</Text><Text className="sc-body-muted">投稿与评论先经人工审核。请不分享学校、住址、联系方式及其他可以识别儿童的信息。</Text>
+      </SectionCard>
+    </View>
+    {navigationError && <View className="sc-inline-error" role="status"><Text>{navigationError}</Text></View>}
+  </AppShell>;
+}
+
+function ProfilePage() {
+  const { state } = useCommunity();
+  return state.mode === 'demo' ? <DemoProfilePage /> : <RealProfilePage />;
 }
 
 export default withClientErrorBoundary(ProfilePage);

@@ -32,6 +32,9 @@ vi.mock('../src/components/Primitives', async () => {
 });
 vi.mock('../src/components/ClientErrorBoundary', () => ({ withClientErrorBoundary: (page: ComponentType) => page }));
 vi.mock('../src/state/CloudProvider', () => ({ useCloud: mocks.useCloud }));
+vi.mock('../src/state/CommunityProvider', () => ({ useCommunity: () => ({ state: { mode: 'demo' } }) }));
+vi.mock('@tarojs/taro', () => ({ default: {}, useDidShow: () => undefined }));
+vi.mock('../src/cloud/auth/platform', () => ({ cloudSourcePlatform: 'web' }));
 vi.mock('../src/navigation', () => ({ openPage: mocks.openPage }));
 
 import KnowledgePage from '../src/pages/knowledge';

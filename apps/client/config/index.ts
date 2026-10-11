@@ -48,6 +48,8 @@ export default defineConfig<'vite'>({
         '/pages/profile/index': '/profile',
         '/pages/community/detail': '/community/detail',
         '/pages/community/compose': '/community/compose',
+        '/pages/community/mine': '/community/mine',
+        '/pages/ops/index': '/ops',
         '/pages/home/index': '/home',
         '/pages/session/index': '/session',
         '/pages/insights/index': '/insights',

@@ -32,6 +32,19 @@ describe('parent community navigation boundaries', () => {
     expect(mocks.navigateTo).toHaveBeenCalledTimes(2);
     expect(mocks.reLaunch).not.toHaveBeenCalled();
   });
+  it('pushes owned content, editing and protected workbench through normal page frames', async () => {
+    const destinations = ['/pages/community/mine', '/pages/community/mine?tab=comments', '/pages/community/mine?tab=bookmarks',
+      '/pages/community/compose?id=550e8400-e29b-41d4-a716-446655440000', '/pages/ops/index'];
+    for (const url of destinations) await openPage(url);
+    expect(mocks.navigateTo.mock.calls.map(([input]) => input.url)).toEqual(destinations);
+    expect(mocks.reLaunch).not.toHaveBeenCalled();
+    expect(PRIMARY_NAVIGATION.some(item => String(item.page) === 'ops')).toBe(false);
+  });
+  it.each(['/pages/community/mine?tab=other', '/pages/ops/index?role=admin', '/pages/community/compose?id=<script>',
+    '/pages/community/detail?id=one&owner=someone', '/pages/community/mine?token=secret'])('rejects unsupported navigation query %s', async url => {
+    await expect(openPage(url)).rejects.toThrow();
+    expect(mocks.navigateTo).not.toHaveBeenCalled();
+  });
   it('returns through the page stack and uses community only for direct entry', async () => {
     mocks.getCurrentPages.mockReturnValue([{ route: 'pages/community/index' }, { route: 'pages/community/detail' }]);
     await backToCommunity();

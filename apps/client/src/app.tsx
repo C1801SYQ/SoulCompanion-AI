@@ -3,6 +3,7 @@ import { AppProvider } from './state/AppProvider';
 import { ClientErrorBoundary } from './components/ClientErrorBoundary';
 import { SessionProvider } from './state/SessionProvider';
 import { CloudProvider, useCloud } from './state/CloudProvider';
+import { CommunityProvider } from './state/CommunityProvider';
 import { resetCommunityMemory } from './community/memory';
 import '@taroify/core/button/style';
 import './design/styles.scss';
@@ -20,5 +21,5 @@ function PreviewMemoryBoundary({ children }: PropsWithChildren) {
 }
 
 export default function App({ children }: PropsWithChildren) {
-  return <AppProvider><ClientErrorBoundary><CloudProvider><PreviewMemoryBoundary><SessionProvider>{children}</SessionProvider></PreviewMemoryBoundary></CloudProvider></ClientErrorBoundary></AppProvider>;
+  return <AppProvider><ClientErrorBoundary><CloudProvider><CommunityProvider><PreviewMemoryBoundary><SessionProvider>{children}</SessionProvider></PreviewMemoryBoundary></CommunityProvider></CloudProvider></ClientErrorBoundary></AppProvider>;
 }

@@ -5,6 +5,7 @@ import { AccessibleButton as Button } from './AccessibleButton';
 import { useCompanion } from '../state/AppProvider';
 import { StatusPill } from './Primitives';
 import { useCloud } from '../state/CloudProvider';
+import { useCommunity } from '../state/CommunityProvider';
 import { FAMILY_TOOLS, PRIMARY_NAVIGATION, backFromTool, isFamilyTool, navigatePrimary, openTool, primaryFor, type PageName, type PrimaryPage } from '../navigation';
 import { useNavigationKeyboardHeight } from '../platform/keyboard';
 
@@ -13,6 +14,7 @@ export type { PageName } from '../navigation';
 export function AppShell({ page, children }: { page: PageName; children: ReactNode }) {
   const { source, connection } = useCompanion();
   const { store } = useCloud();
+  const { state: community } = useCommunity();
   const familyTool = isFamilyTool(page);
   const primaryPage = primaryFor(page);
   const keyboardHeight = useNavigationKeyboardHeight();
@@ -33,10 +35,10 @@ export function AppShell({ page, children }: { page: PageName; children: ReactNo
       <View className="sc-navigation" role="navigation" ariaLabel="主要导航">
         {PRIMARY_NAVIGATION.map(item => <Button id={`nav-${item.page}`} key={item.page} className={`sc-nav-item ${primaryPage === item.page ? 'sc-nav-item--active' : ''}`} aria-current={primaryPage === item.page ? 'page' : undefined} ariaLabel={`${item.label}${primaryPage === item.page ? '，当前入口' : ''}`} onClick={() => navigate(item.page)}><View className={`sc-nav-icon sc-nav-icon--${item.icon}`} ariaHidden><View /></View><View><Text className="sc-nav-label">{item.label}</Text><Text className="sc-nav-caption">{item.caption}</Text></View></Button>)}
       </View>
-      <View className="sc-rail-note"><View className="sc-rail-note-line" /><Text>一起聊聊，</Text><Text>慢慢成长。</Text><Text className="sc-rail-note-small">PC01 · 产品预览</Text></View>
+      <View className="sc-rail-note"><View className="sc-rail-note-line" /><Text>一起聊聊，</Text><Text>慢慢成长。</Text><Text className="sc-rail-note-small">{community.mode === 'real' ? '社区 · 人工审核' : '产品预览 · 合成示例'}</Text></View>
     </View>
     <View className="sc-workspace">
-      <View className="sc-topbar"><Text className="sc-topbar-brand">予怀</Text><Text className="sc-topbar-caption">给家庭日常，多一点理解</Text>{familyTool ? <StatusPill id={source === 'demo' ? 'demo-badge' : 'connection-status'} tone={source === 'demo' ? 'warm' : connection === 'online' ? 'good' : connection === 'error' ? 'error' : 'quiet'}>{source === 'demo' ? '演示模式 · 合成数据' : `REAL · ${connectionLabels[connection]}`}</StatusPill> : <StatusPill id="community-preview-badge" tone="warm">产品预览 · 示例内容</StatusPill>}</View>
+      <View className="sc-topbar"><Text className="sc-topbar-brand">予怀</Text><Text className="sc-topbar-caption">给家庭日常，多一点理解</Text>{familyTool ? <StatusPill id={source === 'demo' ? 'demo-badge' : 'connection-status'} tone={source === 'demo' ? 'warm' : connection === 'online' ? 'good' : connection === 'error' ? 'error' : 'quiet'}>{source === 'demo' ? '演示模式 · 合成数据' : `REAL · ${connectionLabels[connection]}`}</StatusPill> : <StatusPill id={community.mode === 'demo' ? 'community-preview-badge' : 'community-real-badge'} tone={community.mode === 'demo' ? 'warm' : 'good'}>{community.mode === 'demo' ? 'DEMO · 产品预览 · 示例内容' : 'REAL · 社区服务'}</StatusPill>}</View>
       {familyTool && source === 'demo' && <View className="sc-demo-note"><Text>你正在体验合成示例。这些情绪和报告不来自真实采集。</Text></View>}
       {navigationError && <View className="sc-resource-notice sc-resource-notice--error" role="status"><Text>{navigationError}</Text></View>}
       <View className="sc-main" id="main-content" role="main">

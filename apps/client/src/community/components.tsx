@@ -3,15 +3,17 @@ import { AccessibleButton as Button } from '../components/AccessibleButton';
 import { AGE_FILTERS, TOPIC_FILTERS, ageLabel, topicLabel } from './constants';
 import type { CommunityAgeFilter, CommunityTopicFilter } from './constants';
 import type { CommunityPostPreview } from './types';
+import type { CommunityMode, PublicPost, ContentStatus } from './apiTypes';
+import { CONTENT_STATUS_LABELS, publicTime, textSummary } from './presentation';
 
-export function ChoiceGroup<T extends string>({ label, items, selected, onChange, idPrefix }: {
+export function ChoiceGroup<T extends string>({ label, items, selected, onChange, idPrefix, disabled }: {
   label: string; items: readonly { value: T; label: string }[]; selected: string;
-  onChange: (value: T) => void; idPrefix: string;
+  onChange: (value: T) => void; idPrefix: string; disabled?: boolean;
 }) {
   return <View className="pc-filter-section" role="group" ariaLabel={label}>
     <Text className="pc-filter-label">{label}</Text>
     <View className="pc-filter-options">
-      {items.map(item => <Button key={item.value} id={`${idPrefix}-${item.value}`} className={`pc-filter-chip ${item.value === selected ? 'pc-filter-chip--selected' : ''}`} aria-pressed={item.value === selected} ariaLabel={`${item.label}${item.value === selected ? '，已选择' : ''}`} onClick={() => onChange(item.value)}><Text>{item.label}</Text>{item.value === selected && <Text className="pc-filter-check" ariaHidden> ✓</Text>}</Button>)}
+      {items.map(item => <Button key={item.value} id={`${idPrefix}-${item.value}`} disabled={disabled} className={`pc-filter-chip ${item.value === selected ? 'pc-filter-chip--selected' : ''}`} aria-pressed={item.value === selected} ariaLabel={`${item.label}${item.value === selected ? '，已选择' : ''}`} onClick={() => onChange(item.value)}><Text>{item.label}</Text>{item.value === selected && <Text className="pc-filter-check" ariaHidden> ✓</Text>}</Button>)}
     </View>
   </View>;
 }
@@ -41,5 +43,26 @@ export function PostCard({ post, onOpen }: { post: CommunityPostPreview; onOpen:
     <Text className="pc-post-summary">{post.summary}</Text>
     <View className="pc-post-meta"><Text>{post.author.displayName} · 合成昵称</Text><Text>{post.publishedAt.slice(0, 10)} · 示例日期</Text></View>
     <View className="pc-post-bottom"><Text>文字交流 · 产品预览</Text><Text ariaHidden>阅读详情 ↗</Text></View>
+  </View>;
+}
+
+export function CommunityModeNote({ mode }: { mode: CommunityMode }) {
+  return <View id="pc-community-mode" className="pc-preview-note pc-mode-note" role="note">
+    <Text className="pc-preview-note-title">{mode === 'demo' ? 'DEMO · 社区产品预览' : 'REAL · 真实家长社区'}</Text>
+    <Text>{mode === 'demo' ? '下面都是虚构的示例内容和合成家长昵称，用来体验浏览、筛选与详情。示例模式不会发布、互动或送审。' : '这里读取真实社区 API。内容经过人工审核后公开；空列表和连接错误都按真实状态显示，不会替换为示例。'}</Text>
+  </View>;
+}
+
+export function ContentStatusLabel({ status }: { status: ContentStatus }) {
+  return <Text className={`pc-content-status pc-content-status--${status}`}>{CONTENT_STATUS_LABELS[status]}</Text>;
+}
+
+export function PublicPostCard({ post, onOpen }: { post: PublicPost; onOpen: () => void }) {
+  return <View className="pc-post-card" data-post-id={post.id} data-age-band={post.age_band} data-topic={post.topic} data-published-at={post.published_at}>
+    <View className="pc-post-top"><PostTags post={{ age: post.age_band, topic: post.topic }} /><Text className="pc-content-status">真实社区 · 已审核</Text></View>
+    <View role="heading" aria-level="2"><Button id={`pc-open-${post.id}`} className="pc-post-title" onClick={onOpen} ariaLabel={`查看帖子：${post.title}`}>{post.title}</Button></View>
+    <Text className="pc-post-summary">{textSummary(post.body)}</Text>
+    <View className="pc-post-meta"><Text>{post.author.nickname}</Text><Text>{publicTime(post.published_at)}</Text></View>
+    <View className="pc-post-bottom"><Text>家长经验 · 不代表专业建议</Text><Text ariaHidden>阅读详情 ↗</Text></View>
   </View>;
 }
