@@ -4,7 +4,9 @@
 
 ## 基线与 Git
 
-开始时工作区干净；核对后的 PC03 本地/远端 SHA 均为 `c0098ae538128bff6d8f76a20ec8c6a2d52fcb64`。当前分支 `pc-04-community-integration`，从该基线创建。已提交软件 `833767272abf4046067f5c6e3473d12e6d64a8df` 与测试工具 `b59a70ad4dfd4f6e86aa189599e20ec6341550da`。首轮软件/文档 HEAD `4cc94eead2e697e89d7b552f6e354cd74a094f40` 已推送，实际远端 SHA 一致；[本轮 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38155411038) completed/success。真实云回执随下一份文档提交保存，不混淆软件与记录的提交。master、历史分支、schema 001/002/003 与原成果保留。
+开始时工作区干净；核对后的 PC03 本地/远端 SHA 均为 `c0098ae538128bff6d8f76a20ec8c6a2d52fcb64`。当前分支 `pc-04-community-integration`，从该基线创建。已提交软件 `833767272abf4046067f5c6e3473d12e6d64a8df` 与测试工具 `b59a70ad4dfd4f6e86aa189599e20ec6341550da`。首轮软件/文档 HEAD `4cc94eead2e697e89d7b552f6e354cd74a094f40` 已推送，实际远端 SHA 一致；[软件 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38155411038) 10/10 jobs success。
+
+真实云回执保存于 `ce6a64d754cbd36c94f97dcd5a2bb173583da544`，实际本地与远端 SHA 一致；后续仅完善文档元数据。最终记录提交与远端分支 HEAD 见 [分支提交历史](https://github.com/C1801SYQ/SoulCompanion-AI/commits/pc-04-community-integration)，对应工作流见 [PC04 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions?query=branch%3Apc-04-community-integration)。交付回复另列最终本地/远端 SHA 和实际 CI 结果，避免在文档中填入其自身尚未生成的提交哈希。master、历史分支、schema 001/002/003 与原成果保留。
 
 ## 已实现的软件
 
@@ -38,7 +40,7 @@
 | 真实 UI 验收工具离线回归 | PASS，28 Python Fake 测试及 12 Node 边界检查；官方 SDK 独立 H5 构建与源码快照核验通过，没有真实云调用 |
 | Ruff / 新 CJS syntax | 最终工具和浏览器夹具检查 PASS |
 | git diff --check | 当前检查 PASS；提交前还须核对全部最终文件 |
-| GitHub Actions | PASS，软件/首轮文档 SHA `4cc94ee` 的工作流 10/10 jobs success；最终回执文档提交另行核验 |
+| GitHub Actions | PASS，软件/首轮文档 SHA `4cc94ee` 的工作流 10/10 jobs success；文档记录提交结果按上方 PC04 CI 与交付回复核验 |
 
 视口：375×812、390×844、430×932、600×900、767×1024、768×1024、1440×900。Fake 集成中家庭私有接口、媒体权限、外网、角色授予 HTTP 与未捕获异常均为 0。实际 FastAPI 路由配 InMemory 仓储/FakeVerifier；FakeAuth 仅写入忽略目录的客户端副本，不修改生产 SDK。
 
@@ -80,6 +82,6 @@
 
 ## 收尾与停止边界
 
-软件、工具审查与授权范围内的真实 UI/清理已完成。最终回执文档正常提交/推送后再次核对远端 SHA 和 CI。微信完整人工运行、截图中的具体网络错误及手机验证仍按清单等待用户；不会将这些项目写成 PASS。
+软件、工具审查、授权范围内的真实 UI/清理和回执文档推送已完成。最终记录提交的远端一致性与 CI 结果在交付回复中给出。微信完整人工运行、截图中的具体网络错误及手机验证仍按清单等待用户；不会将这些项目写成 PASS。
 
 长期运营人员、微信真实账户/设备与扫码验收仍需用户准备。未指定真实审核员时不授予长期角色。PC05 需 PC04 完整交付与明确后续授权；当前不创建 PC05、不开发 AI、不发布微信、不切 Cloudflare Production、不合并 master。
