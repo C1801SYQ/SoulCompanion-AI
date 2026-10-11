@@ -1,6 +1,6 @@
 # PC03_BASELINE_AUDIT
 
-审计日期：2026-10-10。范围：PC03 社区后端；客户端真实社区接入及运营页面属于 PC04。
+审计日期：2026-10-10。本文记录开始实施时的历史基线，云状态描述不充当当前状态；授权后的实施、修复与真实验收见 [PC03 交付报告](PC03_DELIVERY_REPORT.md)。范围：PC03 社区后端；客户端真实社区接入及运营页面属于 PC04。
 
 ## Git 与历史成果
 
@@ -43,7 +43,7 @@ PC02 报告记录的目标为 `soulcompanion-dev-d0dzo6f2a24211` / 上海，既�
 
 本轮真实云实施前必须重新只读核查环境、AppID、数据库、函数、权限与费用，生成具体变更计划并取得 PC03 独立授权。PC02 授权不延伸到 PC03。没有授权时只执行本地 plan/Fake 测试，不创建集合、角色或部署函数。
 
-2026-10-11 补充只读核验：实际 DescribeEnvInfo 返回上述精确 EnvId、Region=ap-shanghai、Status=NORMAL，唯一 RUNNING 数据库为 `tnt-28wj48qn2`；DescribeBillingInfo 核验体验套餐、超额付费 false、自动续费 false。既有函数仍 Active / Python3.11 / 256MB / 3秒，所属函数与原网关可核实。微信提供方 WX_CLOUDBASE_MICRO_APP / OPENID 为启用，本地 AppID 为 `wx11a055ed4dc69764`；此次安全摘要未独立证明提供方内绑定的具体 AppID，不将旧报告或本地配置当作新的真机证据。PC03 没有执行任何真实写入。
+2026-10-11 授权前补充只读核验：实际 DescribeEnvInfo 返回上述精确 EnvId、Region=ap-shanghai、Status=NORMAL，唯一 RUNNING 数据库为 `tnt-28wj48qn2`；DescribeBillingInfo 核验体验套餐、超额付费 false、自动续费 false。既有函数仍 Active / Python3.11 / 256MB / 3秒，所属函数与原网关可核实。微信提供方 WX_CLOUDBASE_MICRO_APP / OPENID 为启用，本地 AppID 为 `wx11a055ed4dc69764`；此次安全摘要未独立证明提供方内绑定的具体 AppID，不将旧报告或本地配置当作新的真机证据。截至该次授权前核验，PC03 未执行真实写入；随后独立授权的实际实施见交付报告。
 
 ## 测试结构与历史证据
 

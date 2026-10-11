@@ -1,6 +1,6 @@
 # PC03 家长社区后端架构
 
-状态：本地实施规格；PC03 真实云写入尚未获授权，REAL CLOUD 为 NOT TESTED。
+状态：已实现并经独立授权部署；PC03 真实社区后端 19 项合成验收 PASS。具体失败、修复、回滚及清理证据见 [交付报告](PC03_DELIVERY_REPORT.md)。PC01 客户端仍为示例模式，不代表真实社区前端已经交付。
 
 基线：`39bf161b3a584fe545ae20553f3fc6087297d38d`，开发分支 `pc-03-community-backend`。本阶段扩展既有 CloudBase 身份、FastAPI V2 和文档数据库；PC01 页面继续展示明确标注的合成示例，完整前端接入及运营界面属于 PC04。
 
@@ -138,11 +138,11 @@ flowchart LR
 
 选择单文档 CAS 的好处是复用已有生产协议、审计和状态原子、减少事务往返；代价是有界历史和保守配额。分开帖子/评论集合与独立审核日志较直观，但增加集合或跨文档原子性要求。官方 SDK 存在事务入口，不代表本环境已验证事务；PC03 不依赖该能力。
 
-协议证据：现有 [`repository.py`](../../cloud/api/soulcompanion_cloud/repository.py) 已用 POST 确定性主键、条件 PATCH、双字段 order 和 count。安装的官方 JS SDK 3.10.1 的 `database/dist/index.js` 使用相同 REST 方法和参数。[官方数据库文档](https://docs.cloudbase.net/api-reference/openapi/database)说明 `$or/$lt` 等操作符与更新计数，但其管理入口不同；[官方 Flutter 文档](https://docs.cloudbase.net/api-reference/flutter)说明对齐 HTTP 的 NoSQL 查询能力。新增查询形状必须有 Fake HTTP 协议测试；当前不宣称新增操作 REAL CLOUD PASS。
+协议证据：现有 [`repository.py`](../../cloud/api/soulcompanion_cloud/repository.py) 已用 POST 确定性主键、条件 PATCH、双字段 order 和 count。安装的官方 JS SDK 3.10.1 的 `database/dist/index.js` 使用相同 REST 方法和参数。[官方数据库文档](https://docs.cloudbase.net/api-reference/openapi/database)说明 `$or/$lt` 等操作符与更新计数，但其管理入口不同；[官方 Flutter 文档](https://docs.cloudbase.net/api-reference/flutter)说明对齐 HTTP 的 NoSQL 查询能力。真实 REST 的排序必须使用 `[{"field":"published_at","direction":"desc"},{"field":"id","direction":"desc"}]`，不能用 Mongo 风格对象。空库真实查询证明错误形状返回 500、正确形状返回 200；生产适配器已修复，Fake 明确拒绝旧形状并覆盖三个时间字段。授权后的真实合成验收已覆盖筛选、分页、写入、CAS 版本审核及撤回；不宣称生产并发负载验收。
 
 增量执行器默认离线 plan，apply 需本阶段明确授权与双参数门槛；读取实际 DescribeEnvInfo 的环境、地域及唯一 RUNNING 数据库，核对费用、旧 fingerprint、ADMINONLY、索引名称/字段及 marker，部分失败保留带唯一 reservation_id 的 version0，完成后 CAS 发布 version3。DescribeTable 实际响应没有独立索引构建状态字段，只报告回读定义验证，不伪造构建状态。重复完成 apply 只读验证，禁止删表、回填、覆盖用户数据或修改旧 marker。
 
-真实目标沿用 `soulcompanion-dev-d0dzo6f2a24211` / `ap-shanghai` / `tnt-28wj48qn2` / 既有 `sc-v2-api`，但昵称或旧授权都不是本阶段写入许可。新增资源、函数代码更新、费用与回滚必须在 [云变更计划](PC03_CLOUD_CHANGE_PLAN.md)形成具体方案后暂停申请授权。独立部署工具仅更新既有函数代码，保留经 checksum 固定的 PC02 回滚包，并在私有本地目录冻结 source-approved PC03 包用于后续前向更新与回滚归属核验。恢复 PC02 代码会停用社区路由，但不修改 marker、不删除新集合或数据；停用 marker 本身不在部署工具范围内。
+真实目标沿用 `soulcompanion-dev-d0dzo6f2a24211` / `ap-shanghai` / `tnt-28wj48qn2` / 既有 `sc-v2-api`。用户已于 2026-10-11 独立授权 [云变更计划](PC03_CLOUD_CHANGE_PLAN.md)，并在该限定范围完成增量、部署与合成验收；昵称或旧 PC02 授权没有充当许可，后续扩大范围仍需独立方案与授权。独立部署工具仅更新既有函数代码，保留经 checksum 固定的 PC02 回滚包，并在私有本地目录冻结 source-approved PC03 包用于后续前向更新与回滚归属核验。恢复 PC02 代码会停用社区路由，但不修改 marker、不删除新集合或数据；停用 marker 本身不在部署工具范围内。
 
 测试包括路由权限、隐藏父帖、历史审核版本、非法字段/UTF-8、幂等唯一关系、相同时间游标、CAS 并发、审计容量、配额竞争、失联确认、schema 幂等与错误环境，及全部 Phase04/PC02 回归。状态必须区分 AUTOMATED PASS、REAL CLOUD、微信 DevTools 与真机；Fake 不替代真实云或微信验收。
 

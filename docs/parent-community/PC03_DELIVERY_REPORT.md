@@ -1,6 +1,6 @@
 # PC03_DELIVERY_REPORT
 
-日期：2026-10-11。范围：真正的家长社区后端、独立 schema 增量、权限/人工审核/并发控制及自动验收；**真实云实施等待 PC03 独立授权**。不是已上线社区，PC01 页面仍明确展示示例，PC04 前后端与运营界面接入未实施。
+日期：2026-10-11。范围：家长社区后端、独立 schema 增量、权限/人工审核/并发控制及自动验收；**用户已独立授权，真实云部署和社区后端 19 项合成验收 PASS**。PC01 页面仍明确展示示例，PC04 前后端与运营界面接入未实施，不称为已上线的真实社区产品。
 
 ## 基线与成果复用
 
@@ -38,6 +38,8 @@
 4. 新增实际 DescribeEnvInfo 验证，不能将旧 preflight 的常量地域当作真实证据；48 项错误目标/缺失/畸形响应均零写入。
 5. 公共业务/存储回调类型边界和 Python3.11 语法检查，避免运行时或版本兼容回归。
 6. PC02 回滚不依赖当前源/候选仍存在；经审查冻结的 PC03 包允许后续前向热修复，未知归属仍拒绝。
+7. 真实云发现排序参数契约错误：生产适配器改为 `field/direction`，Fake 不再接受同样的错误形状，新增三个时间字段的空库回归。
+8. 新增受保护的真实验收工具与 30 项 Fake 测试，覆盖失联授予/创建后的清理、错误目标零写入、匿名接口失败前置阻断及凭据保护。代码与 Python 独立审查均 APPROVE，独立复测 71 项（30 验收 + 41 传输）PASS。
 
 最终审查结论与最终全量计数、Git 回执在文末记录。没有为通过测试删断言、降低限流或使用 continue-on-error。
 
@@ -63,17 +65,17 @@ Node.js 24.15.0；Python3.12.4；Chromium 浏览器测试使用合成内容与�
 
 新增合成领域、真实 FastAPI HTTP、生产适配器 Fake REST、迁移/角色/部署工具测试；覆盖权限、错误编码、版本审核、隐藏父帖、确定性幂等、游标排序、CAS 竞争、配额、审计容量与不确定确认。全量回归包含 Phase04/PC02 原断言。
 
-构建独立 Linux CPython3.11 部署候选：556 文件、3,626,906 字节，既有锁定依赖齐全、bootstrap 0755。候选 SHA-256：`72f754d3f96dc0cb941dceb27a891b82c81708dd36c104087df9172e6707f6ff`。三个工具离线 plan 均 PASS；包在忽略的 `.test-artifacts/cloudbase-pc03/`，未上传。PC02 固定回滚包 SHA：`81726829c4384d2474509cf382a5b38abd26c0ee0a265a32bcdf0df00956b6b6`，原包没有覆盖。
+最终 Linux CPython3.11 部署包：556 文件、3,626,921 字节，既有锁定依赖齐全、bootstrap 0755；SHA-256：`835348e8c775cade98a6a263cce8990088c76c37019f61ebab2eecd2574246fe`。远端提供方重新压缩后的 SHA：`2e209953389a87a9ca222483aedc2d76c1e7173b5c21217fa06a7d7baf90adb2`；逐个 ZIP 成员与内容、模式核验通过，不要求不同压缩包字节相同。完整函数配置保持不变，已有网关未修改，旧包及原始候选均保留。PC02 固定回滚包 SHA：`81726829c4384d2474509cf382a5b38abd26c0ee0a265a32bcdf0df00956b6b6`，原包没有覆盖。部署包在忽略的 `.test-artifacts/cloudbase-pc03/`，不提交 Git。
 
-已只读重新核验精确既有环境、真实地域、运行数据库、体验套餐、付费开关与函数配置；见 [云变更计划](PC03_CLOUD_CHANGE_PLAN.md)。此次提供方摘要没有独立核对具体微信 AppID，不虚报绑定或手机登录。当前 PC03 新云资源 **NONE**、函数部署 **NONE**、角色授权 **NONE**、真实社区业务写入 **NONE**。
+实施前和受保护操作中重新核验实际环境 `soulcompanion-dev-d0dzo6f2a24211`、地域 `ap-shanghai`、唯一 RUNNING 数据库 `tnt-28wj48qn2`、体验套餐 `baas_trial`，超额付费与自动续费均 false；见 [云变更计划](PC03_CLOUD_CHANGE_PLAN.md)。新增 **5 个 ADMINONLY 集合、14 个项目索引及独立 003 marker（version3）**；仅更新已有 `sc-v2-api` 代码，HTTP/Python3.11/256 MB/3 秒与完整配置保留。001/002 checksum、marker、旧 8 集合 ACL/索引定义未修改；旧 API 验收仅在这些集合操作限定的合成家长资料、新建合成档案与会话，不改真实用户数据。无回填、数据迁移或物理删除。没有新增付费服务、容器、GPU、函数、网关或身份提供方。此次提供方摘要没有独立核对具体微信 AppID，不虚报绑定或手机登录。
 
 | 状态类别 | 结果 |
 |---|---|
-| AUTOMATED PASS | 已执行客户端全部八项；最终 Python/静态/独立审查回执见下表 |
-| REAL CLOUD PASS | PC03 NOT TESTED；旧 PC02 PASS 属于历史证据 |
+| AUTOMATED PASS | 客户端全部八项、1474 Python 回归、静态与独立审查通过，见下表 |
+| REAL CLOUD PASS | PC03 社区后端 19 项、PC02 家庭回归 15 项 PASS；额外旧 API / H5 SDK 结果见下文 |
 | WECHAT DEVTOOLS PASS | PC03 NOT TESTED；离线 wcsc 不替代真实预览 |
 | PHYSICAL DEVICE PASS | NOT TESTED；真实微信登录仍需用户参与 |
-| BLOCKED | 云实施 AUTHORIZATION REQUIRED（用户 PC03-I 明确门槛），本地开发未因此停下 |
+| BLOCKED | NONE（本阶段已授权软件与合成云验收）；正式运营身份及真实微信手机验收仍需要人工参与 |
 | 真实社区前端/运营界面 | NOT IMPLEMENTED（PC04 范围） |
 | AI 自动审核/诊断、媒体上传 | NOT IMPLEMENTED |
 
@@ -83,24 +85,44 @@ Node.js 24.15.0；Python3.12.4；Chromium 浏览器测试使用合成内容与�
 
 索引、文档和请求消耗现有体验配额，不保证永久免费。不开超额付费/自动续费、不购买或升级资源。配额是用户动作尝试预算，不能阻止多账户滥用；不退款未知结果，不自动清理历史配额。审计最多 32 条，普通操作保留最后隐藏/撤回容量。公共分页是排序边界而非跨请求数据库快照；运营队列变化可能影响后续页。
 
-合法原子审核提交后 ACK 丢失可返回 503/INDETERMINATE；相同动作键核验不可变审计及当前状态，不声称所有 503 都零写入。真实 CloudBase 的新查询/索引和 3 秒函数预算仍须在授权后的合成验收验证，Fake HTTP 不能替代此环节。
+合法原子审核提交后 ACK 丢失可返回 503/INDETERMINATE；相同动作键核验不可变审计及当前状态，不声称所有 503 都零写入。真实合成验收已覆盖新查询/分页/版本修改/审核及收尾，未提高 3 秒函数预算；该有界验收不替代生产并发负载、长期稳定性或真实微信验收。受控分页检查假设验收帖子是该年龄筛选下的最新内容，其他同时投稿会导致保守失败，不能冒称数据库快照。
 
-下一步先取得 [PC03 云方案](PC03_CLOUD_CHANGE_PLAN.md)的独立授权，再限定目标增量、部署、短期合成运营授权、两个合成账户全链路验收与清理。正式运营人员身份由用户另行指定。PC03 真实验收和用户安排的微信手机验证完成前，不自动开始 PC04、创建后续分支或合并 master。
+PC03 已按 [独立云方案](PC03_CLOUD_CHANGE_PLAN.md)授权实施。用户后续需指定真实运营审核人员、准备两个有权限的微信测试账户和真机，并按 [微信检查表](WECHAT_MANUAL_CHECKLIST.md)验证登录、账户切换、家庭隔离、退出与设备生命周期。真实社区页面接入仍属 PC04，届时另行确认运营与测试计划；本阶段停止，不创建 PC04 分支、不修改 Cloudflare Production 或合并 master。
+
+## 真实实施、失败与恢复记录
+
+1. 首次 schema apply 返回 `NETWORK_ERROR`，没有当作成功。只读核验确认属于本项目的 version0 reservation、2 个新集合及已有部分索引；随后按同指纹增量恢复，补齐剩余 3 集合/4 索引，最终 5 集合/14 索引全量回读，marker CAS 晋升 version3。旧资源写入为空。
+2. 初始包 `72f754d3f96dc0cb941dceb27a891b82c81708dd36c104087df9172e6707f6ff` 已核对代码，但匿名社区列表 503。空库实际 REST 隔离证明 Mongo 风格 `[{"published_at":"desc"},{"id":"desc"}]` 返回 HTTP500 / `DATABASE_REQUEST_FAILED`，正确 `field/direction` 返回 HTTP200/空列表。此时没有登录、授权运营或创建社区内容。
+3. 依方案实际恢复固定 PC02 包，逐成员核验与完整配置保持不变；schema、历史与新集合保留。回滚提供方包 SHA `85ca02ba53b8dc8f7350f809d57abaa348f4a2d4eb62fce94ad00dfe55e82877`。修复源适配器并增加严格传输回归，408 项领域/API/传输 PASS；随后部署上述最终包并确认匿名社区接口 200。
+4. 首轮业务验收在 `role_grant` 阶段未确认，帖子/评论尝试数均 0，角色与本轮令牌清理记录为 true。进一步只读确认两合成用户 active、角色绑定均 absent；没有盲目重放未知授予。具体失败码未保留，不能倒推为网络问题或产品缺陷。固定白名单诊断的新轮次完整通过，grant/revoke 均读回确认。
+5. 最终社区验收：19 项 PASS、101 请求、1 次按 Retry-After 的 429 重试、最大请求耗时 2250ms；创建尝试仅 3 合成帖子/1 合成评论/1 合成举报，没有新用户。本人待审私读、他人越权、当前版本审核、编辑重排队/旧审核409、年龄话题 AND/游标、评论直接 URL、点赞收藏幂等及私有性、举报去重/处理、隐藏父帖均通过。
+6. 收尾：角色 revoke 后运营接口403，4 条本轮内容软撤回读回，关系 inactive 或父帖不可公开，本轮两令牌撤销后私有 API401；全部 cleanup true。保留不可变审核/角色/举报审计和配额，没有删库、销毁用户或恢复公开合成内容。
+7. 旧家庭回归首轮在合成认证阶段停止，尚未创建新档案，完整两账户令牌验证未达到 PASS（摘要 false），未抹去该失败。受控诊断的新轮次完成 15 项 PASS：70 请求、2 次429重试、最大耗时5017ms（包括 CloudBase 身份服务）；合成档案归档、两令牌验证和剩余令牌为空均确认。未关闭限流、延长函数预算或降低断言。
+
+全部业务与 H5 回归完成后再次只读核验 PASS：实际目标和体验套餐匹配、超额付费/自动续费 false，001/002/003 marker 完整，两个合成运营绑定状态分别 absent/revoked，匿名社区列表为空且无下一页；没有为最终检查执行云写入。
+
+证据是忽略目录中的脱敏结果 JSON、测试 XML 和私有回滚包。真实验收由 [cloud_community_acceptance.py](../../scripts/cloud_community_acceptance.py) 执行；默认离线 plan，双参数授权后才实际调用。第二轮诊断只包裹同一工具的受保护角色调用与固定错误码输出，没有改业务、断言或清理行为。
+
+额外旧 API 11 项 PASS：账户稳定、档案 CRUD、会话结束幂等、越权/未知记录404、客户端身份/原始媒体字段拒绝、数据库直连拒绝、无虚构情绪/报告、档案归档及退出令牌拒绝；本轮 API 令牌清理 true。首次随后执行官方浏览器阶段失败，普通本地构建没有配置公开 API，SDK 被编译裁剪，账号提示“云端账号尚未配置”，停在登录前的访客状态断言。一次补配置误带 `/api/v2` 路径，也被既有 origin 校验拒绝，没有继续实际登录。
+
+重新按 [客户端配置](../../apps/client/config/index.ts)设置 `PUBLIC_API_BASE_URL=https://soulcompanion-dev-d0dzo6f2a24211-1501181209.ap-shanghai.app.tcloudbase.com`（只用 origin，路径由 API 模块添加），`PUBLIC_DEMO_ONLY=false`、`CF_PAGES=0`，本地 H5 构建 PASS（1793 模块，27.14 秒）。随后只复用一个既有合成账户执行原有 `cloud_browser.cjs`，12 项全部 PASS：访客无私有请求、官方 SDK 登录、当前用户 UI、合成档案创建/改名/选中/归档、退出清空私有 UI、令牌401、凭据无持久存储/ Cookie、无自动设备权限或原始媒体请求。未修改客户端源码、断言、Cloudflare Production 或云配置；官方 H5 SDK PASS 不等于微信登录/DevTools/手机 PASS。
 
 ## 最终本地与 Git 交付回执
 
 | 项目 | 当前记录 |
 |---|---|
-| 全量 Python 回归 | 1441 PASS，0 fail/error/skip；含 cloud/cloud_tools 1114 项；153.032 秒 |
-| PC03 专项独立复测 | 685 PASS：domain197、API170、transport38、schema148、roles55、deploy77 |
+| 全量 Python 回归 | 1474 PASS，0 fail/error/skip；cloud/cloud_tools 1147 项；143.810 秒；含全部 Phase04/PC02 和新增验收工具 |
+| PC03 专项 | 718 项：domain197、API170、transport41、schema148、roles55、deploy77、acceptance30；均在全量回归中通过 |
 | Ruff 全仓库 | PASS |
-| Python3.11 AST | 13 个 PC03 生产文件 PASS；mypy/Black/Pylint/Bandit 未安装，NOT RUN |
+| Python3.11 AST | 13 个 PC03 生产文件及新增验收工具/测试 PASS；mypy/Black/Pylint/Bandit 未安装，NOT RUN |
 | 独立部署代码审查 | PASS；PC03/PC02 部署共 140 项回归 PASS |
 | 最终 Python/安全独立审查 | PASS；安全独立执行 schema/roles/deploy 280 项 Fake 全通过，无遗留 CRITICAL/HIGH/MEDIUM |
 | 既有 acceptance / hardware smoke | PASS；hardware 为 FAKE 软件接口，真实设备 NOT TESTED |
-| git diff --check / 相对文档路径 | PASS；26 相对链接目标存在，提交前复核 staged 文件 |
-| 软件提交 SHA | `c7d4cec3cd7de744630d5636792ad1097912ba25` · `feat: add parent community domain and moderation backend` |
-| 软件远端回执 | 普通 push 后 `ls-remote origin pc-03-community-backend` 独立核实为 `c7d4cec3cd7de744630d5636792ad1097912ba25` |
-| 软件 GitHub Actions | [run 38109593239](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38109593239)：completed / success，9/9 job 全通过；含 Linux Python3.11 云回归与包构建 |
+| git diff --check / 相对文档路径 | PASS；六篇当前文档 35 个相对文件链接目标均存在，独立文档审查 APPROVE |
+| 凭据与提交边界 | 301 个 tracked 文件及最终部署 ZIP 在内存中扫描实际服务端 key 均未命中；凭据模式检查 PASS，无客户端/lockfile/构建产物变更，001/002 字节保持基线 |
+| 基础软件提交 | `c7d4cec3cd7de744630d5636792ad1097912ba25` · `feat: add parent community domain and moderation backend`；[CI 38109593239](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38109593239) 9/9 PASS |
+| 云 REST 排序修复 | `b056f40d64b91a20398d155b3919f18d047de808` · `fix: align community sorting with CloudBase REST contract`；[CI 38111136373](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38111136373) completed/success |
+| 受保护验收工具及测试 | `4fbc2d0b3a69dce83f694b8024629201e40b46b7` · `test: verify real community workflow and cleanup`，普通 push 后远端 SHA 独立核验一致 |
+| 新工具 GitHub Actions | [run 38111589516](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/38111589516)：completed/success，9/9 job PASS；包括 Python3.11 云回归、全部客户端和依赖审计 |
 
-本最终文档回执作为后续独立提交，最新分支 SHA 由 Git 与交付消息报告，不在自身正文伪造自引用。上表记录软件提交的实际验收，文档提交不改变软件代码。PC03 本地授权范围已完成，真实云增量/部署/合成验收等待用户对具体方案的独立确认。
+最终文档回执作为后续独立提交，最新本地/远端 SHA 与该文档提交的 CI 由 Git 及交付消息报告，不在正文伪造自身 SHA。软件提交和实际验收在上表逐项记录，文档提交不改变部署软件。当前工作停止在 PC03，不自动进入 PC04。
