@@ -1,10 +1,10 @@
 # 予怀 · SoulCompanion AI
 
-更新：2026-10-10。当前开发分支：`pc-02-family-identity`；开发成果尚未合并到 `master`。
+更新：2026-10-11。当前开发分支：`pc-04-community-integration`；开发成果尚未合并到 `master`。
 
 予怀面向 **0～18 岁儿童家庭**，由成年家长和监护人使用，帮助交流育儿经验、理解孩子与改善亲子沟通。微信小程序是优先平台，H5 用于共享界面、开发预览与浏览器测试。默认首页为家长社区，浏览不要求诊断标签、购买机器人、订阅或先建儿童档案。
 
-**PC01 是可操作的社区产品原型：列表和详情均为明确标注的合成示例，投稿仅内存预览，不会发布到社区。真实社区发布、互动和内容审核尚未实现。** 育儿知识与手动成长记录展示尚未接入的空状态；旧陪伴、洞察和情绪报告作为可选家庭工具保留。
+**PC04 已实现真实社区 API 接入及受权限保护的人工审核台。** REAL 支持公开列表、详情、投稿待审、本人内容、一级评论、点赞、收藏和举报；DEMO 保留明确标注的合成示例与内存投稿预览，不进行云写入。真实错误/空列表不回退示例。当前本地合成闭环通过，PC04 的独立真实云实施与微信人工验收仍待完成，见 [PC04 交付报告](docs/parent-community/PC04_DELIVERY_REPORT.md)。育儿知识与手动成长记录保持未接入的空状态；旧陪伴、洞察和情绪报告作为可选家庭工具保留。
 
 Phase 01～04 的共享客户端、终端媒体采集及 CloudBase 云后端成果继续沿用。Phase 04 已完成实际部署、API 和 H5 官方 SDK 验收，云端保存账户、私有儿童档案及会话元数据；PC01 没有新增云资源。**V2 媒体上传、AI 推理和 Android APK 尚未实现，实体机器人暂停。**
 
@@ -34,7 +34,10 @@ flowchart TB
   H5 --> Client["共享 Taro + React + TypeScript 客户端"]
   WeChat["微信小程序 · 人工验收待完成"] --> Client
   Android["Android · 规划"] -.-> Client
-  Client --> Community["默认家长社区 · 合成示例 / 内存投稿预览"]
+  Client --> Community["默认家长社区 · REAL / DEMO 隔离"]
+  Community -->|"REAL 公开读取 / 已登录操作"| API
+  Community --> Ops["独立受限路由 · 人工审核"]
+  Ops -->|"服务端运营权限 / revision"| API
   Client --> Tools["显式进入可选家庭工具"]
   Tools --> Local["用户主动 Start / End · 终端媒体适配器"]
   Devices["终端摄像头 / 麦克风"] --> Local
@@ -47,13 +50,13 @@ flowchart TB
   Ownership --> DB["CloudBase 文档数据库 · ADMINONLY"]
 ```
 
-图中云端路径用于显式进入家庭工具的真实开发构建。社区等公共页面暂停私有读取，不申请摄像头/麦克风、不读儿童档案/报告、不调用社区写入 API。公开 Cloudflare DEMO 构建不初始化云认证、不请求私有数据。本地媒体只用于预览和采样，没有上传或推理链路。
+真实开发构建的社区公开 GET 不携带令牌；登录后由用户主动执行投稿、评论和互动。社区不申请摄像头/麦克风，不读儿童档案、会话或私有报告。公开 Cloudflare DEMO 构建不初始化云认证、不请求私有数据、不进行社区写入。本地媒体只用于预览和采样，没有上传或推理链路。
 
 ### 云端身份、数据库与数据隔离
 
 - Web 使用官方 CloudBase 用户名/密码登录；微信适配器使用官方微信身份流程。FastAPI 对每个私有请求进行在线 token 校验，不自行存储密码或签发 JWT，也不相信客户端提交的 UID/OpenID。
 - 已验证主体映射为应用用户 UUID；所有私有档案和会话操作使用服务端推导的 owner。跨用户与不存在资源统一返回 404，匿名私有访问返回 401。
-- Phase04 的七个集合和十三个项目索引保持不变；PC02 授权后新增一个 ADMINONLY 家长社区资料集合及一个唯一 owner 索引，独立 marker 当前为 version2。客户端不能绕过 API 直查数据库，真实 token 的直接访问拒绝已验证。
+- Phase04 的七个集合和十三个项目索引保持不变；PC02 增加独立家长社区资料集合和唯一 owner 索引；PC03 独立授权部署五个 ADMINONLY 社区集合、十四个索引和独立 003 marker version3。PC04 不新增 schema、集合或索引。客户端不能绕过 API 直查数据库，历史真实 token 直接访问拒绝已验证。
 - 令牌只保存在客户端内存，刷新后重新登录。退出、账户切换和 401 会清除私有界面与过期响应。服务端 key 仅放在忽略的部署配置和云函数托管环境变量中。
 - 精确 CORS、请求大小/超时限制、应用及网关限流保护开发 API。现有开发环境是有限期限和配额的 CloudBase 体验版，**不是永久免费或无限资源**；Phase 04 验收时超额付费和自动续费均关闭。
 
@@ -70,6 +73,7 @@ flowchart TB
 已完成：
 
 - 四个主入口、六个年龄段与七类话题组合筛选、示例帖子详情、返回状态恢复和纯文本投稿预览；示例内容始终明确标注。
+- PC04 REAL 公开列表/详情/游标分页、待审投稿与评论、本人内容/反馈/版本编辑撤回、点赞/收藏/举报，以及服务端授权的独立人工审核台；本地 Fake 全链路验证不冒充真实云验收。
 - 米黄/柔灰的共享界面、桌面/移动导航和可访问控件；育儿知识、手动成长记录保持真实的未接入说明。
 - PC02 支持主动保存独立公开昵称、可选儿童年龄、身份切换同步隐藏草稿和能力探测；云端昵称及年龄读写、两账户所有权与清理通过真实 API 验收，界面以实际读回确认保存。
 - 保留五个旧家庭工具、减少动态效果设置、DEMO 与错误/离线状态；公共路由暂停私有请求，账户切换继续清理私有数据和内存草稿。
@@ -80,7 +84,7 @@ flowchart TB
 
 当前未实现或未验证：
 
-- **未实现：真实社区发布/审核/互动、来源核对的知识文章、手动成长记录存储、V2 媒体上传、AI 推理与 Android APK。** 情绪记录和报告接口只读，真实空数据不会生成结论。
+- **未实现：来源核对的知识文章、手动成长记录存储、V2 媒体上传、AI 推理与 Android APK。** 社区软件已接通真实契约，但 PC04 新读取端点部署及真实 UI 验收需独立授权；尚未正式发布微信小程序。情绪记录和报告接口只读，真实空数据不会生成结论。
 - **待人工验证：最终身份构建的微信 DevTools、手机微信登录、权限与实体设备行为。** 已确认的兼容性编译、构建成功和浏览器虚拟设备测试不能替代真机验证。
 - 尚未发布真实云账户的公开生产客户端，未迁移本地 SQLite 数据，未合并 `master`。
 
@@ -97,14 +101,14 @@ flowchart TB
 | Phase 09 | `09-cloud-release` · 云端发布 | 规划，未开始 |
 | Phase 10 | `10-release-candidate` · 候选发布版本 | 规划，未开始 |
 
-上述 Phase 编号来自 [Phase 01 记录](docs/v2/01-product-baseline.md)，Phase 05～10 是历史规划，均未开始；当前产品优先级采用下面的家长社区路线。本轮范围为 PC02，不启动 PC03。
+上述 Phase 编号来自 [Phase 01 记录](docs/v2/01-product-baseline.md)，Phase 05～10 是历史规划，均未开始；当前产品优先级采用下面的家长社区路线。本轮范围为 PC04，不启动 PC05。
 
 | 社区路线 | 主题 | 状态 |
 | --- | --- | --- |
 | PC01 | 家长社区产品重定位与可视原型 | 已交付并保留；真实发布与审核未实现 |
 | PC02 | 微信身份与家庭资料 | 软件自动测试、15 项真实 API 与额外 API 11 项/H5 SDK 12 项通过，最终软件提交自身 9 项 CI 全通过；最终身份构建 DevTools/微信/真机待人工验收 |
-| PC03 | 社区数据库与审核后端 | 规划 |
-| PC04 | 真实社区与运营闭环 | 规划 |
+| PC03 | 社区数据库与审核后端 | 软件及独立授权后的真实 CloudBase 合成验收通过，成果沿用 |
+| PC04 | 真实社区与运营闭环 | API/UI、受限审核台及本地 Fake 闭环已实现；独立云验收、DevTools 和手机仍待完成 |
 | PC05 | 育儿知识与私有成长记录 | 规划 |
 | PC06 | 真机与受控体验版交付 | 规划 |
 
@@ -117,7 +121,7 @@ flowchart TB
 ### 1. 获取当前开发分支并安装依赖
 
 ```powershell
-git clone --branch pc-02-family-identity https://github.com/C1801SYQ/SoulCompanion-AI.git
+git clone --branch pc-04-community-integration https://github.com/C1801SYQ/SoulCompanion-AI.git
 cd SoulCompanion-AI
 python -m venv .venv
 & ./.venv/Scripts/python.exe -m pip install -r requirements-web.txt -r requirements-dev.txt -r cloud/api/requirements-cloud.txt
@@ -136,7 +140,7 @@ npm --prefix apps/client run dev:h5
 
 打开 [本地 H5 社区](http://127.0.0.1:5173/)。默认可浏览合成帖子、年龄/话题筛选、详情和投稿预览，无需登录。通过“成长记录”进入旧家庭工具后，情绪/报告为 DEMO 合成数据，设备仍需用户主动 Start。浏览器与系统控制实际设备权限。
 
-### 3. 真实 CloudBase 元数据开发预览
+### 3. 真实 CloudBase 社区与家庭工具开发预览
 
 在同一仓库根目录的新终端中，使用已验证的公开开发配置：
 
@@ -151,7 +155,7 @@ npm run client:build:h5
 & ./.venv/Scripts/python.exe -m http.server 18404 --bind 127.0.0.1 --directory apps/client/dist
 ```
 
-打开 [本地开发预览](http://127.0.0.1:18404/)，社区仍只展示合成示例。通过“我的”显式进入账户与私有档案后，使用自己有权限的 CloudBase 账户登录；只有家庭工具连接既有开发环境。情绪/报告空状态不会启动 AI 推理。
+打开 [本地开发预览](http://127.0.0.1:18404/)，社区为 REAL：匿名可读已公开帖子；主动登录后设置独立家长昵称并参与投稿/互动。所有投稿和评论先待人工审核。运营为独立受限路由 `#/ops`，普通主导航没有管理入口；服务端角色决定权限。两个新读取端点的部署状态与合成验收门槛见 [PC04 云计划](docs/parent-community/PC04_CLOUD_CHANGE_PLAN.md)，未经授权不要运行真实云写入验收。通过“我的”显式进入私有家庭工具，空情绪/报告不会启动 AI。
 
 `PUBLIC_API_BASE_URL` 是 HTTPS **origin，不带 `/api/v2`**；客户端自行附加 V2 路径。目前云端 CORS 精确允许 `http://127.0.0.1:18404`，不能把 5173、localhost 或新的公开域名当作同一个 origin。更改允许来源须按部署文档处理；以上清除 `CF_PAGES` 仅影响当前终端，不修改公开站点。
 
@@ -163,7 +167,7 @@ npm run client:build:h5
 npm run client:build:weapp
 ```
 
-输出为 `apps/client/dist-weapp`。使用有 AppID 权限的账号导入微信开发者工具；当前最终构建、微信登录与真机步骤见 [PC02 人工清单](docs/parent-community/WECHAT_MANUAL_CHECKLIST.md)，合法 request 域名等历史配置见 [MANUAL_ACTIONS](docs/v2/MANUAL_ACTIONS.md)。昵称和可选儿童年龄的真实 API 已通过，微信界面保存仍须按清单人工验收。Android 目前只有规划，没有 APK 构建命令。
+输出为 `apps/client/dist-weapp`。低频家庭工具和运营页使用普通分包，保留原路由，并启用 `requiredComponents`。构建和官方 WXSS 语法验证不代表 DevTools/真机通过。使用有 AppID 权限的账户导入，按 [PC04 人工清单](docs/parent-community/PC04_WECHAT_MANUAL_CHECKLIST.md) 验证；合法 request 域名等历史配置见 [MANUAL_ACTIONS](docs/v2/MANUAL_ACTIONS.md)。Android 目前只有规划，没有 APK 构建命令。
 
 ## 开发配置
 
@@ -207,7 +211,9 @@ $env:SOULCOMPANION_PYTHON = (Resolve-Path ./.venv/Scripts/python.exe).Path
 npm run client:test:e2e
 npm run client:test:media
 npm run client:test:community
+npm run client:test:community:integration
 npm run client:build:weapp
+npm run client:check:bundle
 git diff --check
 ```
 
@@ -215,7 +221,7 @@ git diff --check
 
 仅检查云 API 与工具：`python -m pytest tests/cloud tests/cloud_tools -q`（使用上面安装依赖的解释器）。真实云端验收是另行授权的显式操作，会重置两个已有合成测试账户的密码并写入合成元数据；先阅读部署文档，默认计划模式不调用云端，不把它放入普通无凭据 CI。
 
-社区脚本独立验证交互、响应式布局、网络/存储/设备边界，证据位于忽略的 `.test-artifacts/community-acceptance/`；微信构建成功不等于真机通过。PC01 当前数量与结果见交付报告。
+旧社区脚本独立验证 DEMO 交互及网络/存储/设备边界，证据位于忽略的 `.test-artifacts/community-acceptance/`。新集成脚本将真实业务代码复制到忽略目录，仅在副本使用 FakeAuth；实际 FastAPI 路由配内存仓储和合成角色，覆盖完整人工社区闭环、竞态及响应式，证据位于 `.test-artifacts/pc04-community-integration/`。不会访问真实云；构建与浏览器通过不等于微信真机通过。
 
 历史 Phase 04 验证包括 Python **513** 项、客户端 **241** 项、三次 H5 E2E、14 组 media、真实 API **11** 项和 SDK 浏览器 **12** 项；当时九项 CI 均通过，见 [历史 CI](https://github.com/C1801SYQ/SoulCompanion-AI/actions/runs/37745126455)。依赖审计策略通过不等于没有漏洞，继承风险保留。
 
@@ -232,6 +238,9 @@ FastAPI V2 已部署为既有 CloudBase 环境中的 `sc-v2-api` HTTP 云函数�
 | [PC01 交付报告](docs/parent-community/PC01_DELIVERY_REPORT.md) | 原型、自动测试、平台限制及提交回执 |
 | [PC02 交付报告](docs/parent-community/PC02_DELIVERY_REPORT.md) / [限定云变更](docs/parent-community/PC02_CLOUD_CHANGE_PLAN.md) | 微信身份与家庭资料、真实云执行/回滚、最终验收状态 |
 | [PC02 schema](scripts/cloud_family_schema.py) / [代码部署与回滚](scripts/cloud_family_deploy.py) / [真实验收](scripts/cloud_family_acceptance.py) | 默认离线计划；apply 需核对既有授权范围和显式执行门槛 |
+| [PC03 交付](docs/parent-community/PC03_DELIVERY_REPORT.md) / [社区 API 契约](docs/parent-community/PC03_API_CONTRACT.md) | 已部署社区后端、角色与版本化审核边界 |
+| [PC04 交付](docs/parent-community/PC04_DELIVERY_REPORT.md) / [最小读取扩展](docs/parent-community/PC04_API_EXTENSION.md) | REAL/DEMO 客户端、受限审核台、测试及当前验收状态 |
+| [PC04 云计划](docs/parent-community/PC04_CLOUD_CHANGE_PLAN.md) / [微信人工清单](docs/parent-community/PC04_WECHAT_MANUAL_CHECKLIST.md) / [依赖与包体审计](docs/parent-community/PC04_DEPENDENCY_BUNDLE_AUDIT.md) | 独立授权、回滚、有界合成清理、真实设备及工具链风险 |
 | [Phase 04 交付报告](docs/v2/PHASE04_DELIVERY_REPORT.md) | 31 项结果、端点、真实证据、用量与限制 |
 | [CloudBase 部署](docs/v2/CLOUDBASE_DEPLOY.md) | 审计、schema、打包、受控部署和真实验收 |
 | [微信人工操作](docs/v2/MANUAL_ACTIONS.md) | DevTools/真机、合法域名、key 轮换 |
