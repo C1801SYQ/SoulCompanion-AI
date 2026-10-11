@@ -15,6 +15,9 @@ from starlette.exceptions import HTTPException
 
 from .auth import CloudBaseTokenVerifier, TokenVerifier
 from .config import Settings
+from .community.repository import CommunityDocumentRepository, CommunityRepository, UnavailableCommunityRepository
+from .community.routes import register_routes
+from .community.service import CommunityService
 from .errors import CloudError
 from .models import (
     ChildProfile,
@@ -44,6 +47,7 @@ def create_app(
     settings: Settings | None = None,
     repository: CloudRepository | None = None,
     verifier: TokenVerifier | None = None,
+    community_repository: CommunityRepository | None = None,
 ) -> FastAPI:
     configuration = settings if settings is not None else Settings.from_environment()
     upstream = httpx.AsyncClient(follow_redirects=False, trust_env=False)
@@ -130,6 +134,12 @@ def create_app(
         return user
 
     UserDependency = Annotated[User, Depends(current_user)]
+    community_storage = community_repository
+    if community_storage is None:
+        community_storage = CommunityDocumentRepository(storage) if isinstance(storage, CloudBaseDocumentRepository) else UnavailableCommunityRepository()
+    community_service = CommunityService(community_storage, storage)
+    app.state.community_service = community_service
+    register_routes(app, community_service, current_user)
     Limit = Annotated[int, Query(ge=1, le=100)]
     Offset = Annotated[int, Query(ge=0, le=10000)]
 

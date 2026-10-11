@@ -62,6 +62,8 @@ class SecurityMiddleware:
                 "origin",
                 "content-length",
                 "authorization",
+                "idempotency-key",
+                "content-type",
             }:
                 headers[name] = None
             elif name not in headers:
@@ -122,6 +124,10 @@ class SecurityMiddleware:
             if headers.get("authorization", "") is None:
                 await fail(401, "unauthorized", "Please sign in again.")
                 return
+            community = scope["path"].startswith(("/api/v2/community/", "/api/v2/me/community/", "/api/v2/ops/"))
+            if community and (headers.get("idempotency-key", "") is None or headers.get("content-type", "") is None):
+                await fail(400, "invalid_request", "Invalid request.")
+                return
             host = (scope.get("client") or ("unknown", 0))[0]
             public = scope["path"] in {"/api/v2/healthz", "/api/v2/readyz"}
             namespace, limit = (
@@ -149,7 +155,7 @@ class SecurityMiddleware:
                     "PATCH",
                     "PUT",
                     "DELETE",
-                } or not requested_headers <= {"authorization", "content-type"}:
+                } or not requested_headers <= ({"authorization", "content-type", "idempotency-key"} if community else {"authorization", "content-type"}):
                     await fail(
                         403, "cors_not_allowed", "Cross-origin request is not allowed."
                     )
@@ -165,7 +171,7 @@ class SecurityMiddleware:
                             ),
                             (
                                 b"access-control-allow-headers",
-                                b"Authorization, Content-Type",
+                                b"Authorization, Content-Type, Idempotency-Key" if community else b"Authorization, Content-Type",
                             ),
                             (b"access-control-max-age", b"300"),
                         ],
@@ -197,6 +203,14 @@ class SecurityMiddleware:
                 if not message.get("more_body", False):
                     break
             content = b"".join(chunks)
+            if community and content:
+                try:
+                    content.decode("utf-8", errors="strict")
+                    if b"\x00" in content:
+                        raise UnicodeError
+                except UnicodeError:
+                    await fail(422, "validation_error", "Request fields are invalid.")
+                    return
             consumed = False
 
             async def bounded_receive():

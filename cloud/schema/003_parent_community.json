@@ -1,0 +1,354 @@
+{
+  "version": 3,
+  "env_id": "soulcompanion-dev-d0dzo6f2a24211",
+  "region": "ap-shanghai",
+  "owner": "SoulCompanion-AI/pc03",
+  "marker_id": "pc03-parent-community",
+  "acl": "ADMINONLY",
+  "base_schemas": [
+    {
+      "marker_id": "phase04",
+      "owner": "SoulCompanion-AI/phase04",
+      "version": 1,
+      "checksum": "7e23a3c17a1551df1d5a3c7c7c9deb8903f9ea7430fbd38e4fa482e85159fa49"
+    },
+    {
+      "marker_id": "pc02-family-identity",
+      "owner": "SoulCompanion-AI/pc02",
+      "version": 2,
+      "checksum": "6462a3674be5331748cf5715d81b78dd7c687a6ee326e7a0d95b253c29751324"
+    }
+  ],
+  "collections": [
+    {
+      "name": "sc_v2_community_content",
+      "purpose": "Posts and one-level comments; private owner_id, public author snapshot, versioned moderation state and same-document immutable audit",
+      "indexes": [
+        {
+          "name": "pc03_public_time",
+          "unique": false,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "status",
+              "1"
+            ],
+            [
+              "published_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_public_age",
+          "unique": false,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "status",
+              "1"
+            ],
+            [
+              "age_band",
+              "1"
+            ],
+            [
+              "published_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_public_topic",
+          "unique": false,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "status",
+              "1"
+            ],
+            [
+              "topic",
+              "1"
+            ],
+            [
+              "published_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_public_age_topic",
+          "unique": false,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "status",
+              "1"
+            ],
+            [
+              "age_band",
+              "1"
+            ],
+            [
+              "topic",
+              "1"
+            ],
+            [
+              "published_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_comments_time",
+          "unique": false,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "post_id",
+              "1"
+            ],
+            [
+              "status",
+              "1"
+            ],
+            [
+              "published_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_owner_time",
+          "unique": false,
+          "keys": [
+            [
+              "owner_id",
+              "1"
+            ],
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "created_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_moderation_queue",
+          "unique": false,
+          "keys": [
+            [
+              "status",
+              "1"
+            ],
+            [
+              "updated_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_community_relations",
+      "purpose": "Deterministic per-owner like or private bookmark; active state and conditional row_version",
+      "indexes": [
+        {
+          "name": "pc03_relation_unique",
+          "unique": true,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "owner_id",
+              "1"
+            ],
+            [
+              "post_id",
+              "1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_relation_count",
+          "unique": false,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "post_id",
+              "1"
+            ],
+            [
+              "active",
+              "1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_bookmarks_owner",
+          "unique": false,
+          "keys": [
+            [
+              "kind",
+              "1"
+            ],
+            [
+              "owner_id",
+              "1"
+            ],
+            [
+              "active",
+              "1"
+            ],
+            [
+              "created_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_community_content_reports",
+      "purpose": "Private content reports, distinct from CloudReport; one reporter per target content revision and same-document handling audit",
+      "indexes": [
+        {
+          "name": "pc03_report_unique",
+          "unique": true,
+          "keys": [
+            [
+              "reporter_owner_id",
+              "1"
+            ],
+            [
+              "target_type",
+              "1"
+            ],
+            [
+              "target_id",
+              "1"
+            ],
+            [
+              "target_revision",
+              "1"
+            ]
+          ]
+        },
+        {
+          "name": "pc03_reports_queue",
+          "unique": false,
+          "keys": [
+            [
+              "status",
+              "1"
+            ],
+            [
+              "created_at",
+              "-1"
+            ],
+            [
+              "id",
+              "-1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_community_role_bindings",
+      "purpose": "Verified application principal role bindings; protected management writes and same-document immutable grant/revoke audit",
+      "indexes": [
+        {
+          "name": "pc03_role_principal_unique",
+          "unique": true,
+          "keys": [
+            [
+              "principal_id",
+              "1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sc_v2_community_write_quotas",
+      "purpose": "Per-user/action/UTC-day distributed write-attempt budget with conditional row_version; no automatic TTL or cleanup",
+      "indexes": [
+        {
+          "name": "pc03_quota_unique",
+          "unique": true,
+          "keys": [
+            [
+              "owner_id",
+              "1"
+            ],
+            [
+              "action",
+              "1"
+            ],
+            [
+              "bucket",
+              "1"
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}
