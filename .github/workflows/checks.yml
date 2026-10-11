@@ -180,7 +180,34 @@ jobs:
       - run: npm --prefix apps/client ci --ignore-scripts
       - run: npm run client:typecheck
       - run: npm run client:build:weapp
+      - run: npm run client:check:bundle
+      - run: npm run client:build:weapp && npm run client:check:bundle
+        env:
+          PUBLIC_API_BASE_URL: 'https://soulcompanion-dev-d0dzo6f2a24211-1501181209.ap-shanghai.app.tcloudbase.com'
       - uses: actions/upload-artifact@v4
         with:
           name: wechat-build-for-owner-devtools
           path: apps/client/dist-weapp
+  client-community-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install -r requirements-web.txt -r requirements-dev.txt
+      - run: npm ci --ignore-scripts
+      - run: npm --prefix apps/client ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run client:test:community:integration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: community-integration-evidence
+          path: .test-artifacts/pc04-community-integration

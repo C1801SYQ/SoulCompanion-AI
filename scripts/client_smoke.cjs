@@ -113,7 +113,25 @@ async function previewWorker() {
   }, 50);
 }
 
-const element = (page, id) => page.locator(`[data-testid="${id}"]:visible, #${id}:visible`).first();
+const activeFrame = page => page.locator('.taro_page_show.taro_page_stationed:not(.taro_page_shade):visible').last();
+const element = (page, id) => activeFrame(page).locator(`[data-testid="${id}"]:visible, #${id}:visible`).first();
+
+/** URL and aria-current update before Taro finishes replacing the outgoing page.
+ * Wait on the one stationed destination, as the community runner already does,
+ * so focus and geometry assertions cannot target a transitioning frame.
+ */
+async function waitForActivePage(page, name) {
+  await page.waitForFunction(expected => {
+    const frames = [...document.querySelectorAll('.taro_page_show.taro_page_stationed:not(.taro_page_shade)')].filter(node => {
+      const style = getComputedStyle(node), box = node.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && Math.abs(box.left) <= 1;
+    });
+    if (frames.length !== 1) return false;
+    const frame = frames[0];
+    return [expected, `/pages${expected}/index`, `/pages${expected}`].includes(frame.id.split('?')[0])
+      && getComputedStyle(frame).transform === 'none' && Math.abs(frame.clientWidth - innerWidth) <= 1;
+  }, '/' + name);
+}
 
 async function acceptance() {
   fs.mkdirSync(OUTPUT, { recursive: true });
@@ -189,6 +207,7 @@ async function acceptance() {
   async function navigate(page, name) {
     await element(page, 'nav-' + name).click();
     await expect(page).toHaveURL(new RegExp(`(?:/pages/)?${name}(?:/index)?(?:[/?]|$)`));
+    await waitForActivePage(page, name);
     await expect(element(page, 'nav-' + name)).toHaveAttribute('aria-current', 'page');
   }
 
@@ -571,11 +590,13 @@ async function acceptance() {
     const focus = await element(page, 'nav-session').evaluate(node => {
       const style = getComputedStyle(node);
       const box = node.getBoundingClientRect();
+      const frame = node.closest('.taro_page');
       return { width: box.width, height: box.height, label: node.getAttribute('aria-label') || node.textContent,
-        outline: style.outlineStyle, outline_width: Number.parseFloat(style.outlineWidth), focused: node.matches(':focus-visible') };
+        outline: style.outlineStyle, outline_width: Number.parseFloat(style.outlineWidth), focused: node.matches(':focus-visible'),
+        frame: frame ? { id: frame.id, classes: frame.className, transform: getComputedStyle(frame).transform } : null };
     });
     assert.ok(focus.label.trim().length > 0);
-    assert.ok(focus.focused && focus.outline !== 'none' && focus.outline_width >= 1, 'Keyboard navigation must show an actual visible focus outline');
+    assert.ok(focus.focused && focus.outline !== 'none' && focus.outline_width >= 1, `Keyboard navigation must show an actual visible focus outline: ${JSON.stringify(focus)}`);
     evidence.keyboard_focus = focus;
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/session/);

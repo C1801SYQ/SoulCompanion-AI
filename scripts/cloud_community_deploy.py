@@ -46,10 +46,11 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def historical_package(historical: Path) -> tuple[bytes, dict[str, str]]:
+def historical_package(historical: Path, *, baseline_sha256: str | None = None) -> tuple[bytes, dict[str, str]]:
     previous = read_zip(historical)
-    if not hmac.compare_digest(digest(previous), PC02_SHA256):
-        raise AdminError("PC02_PACKAGE_CHECKSUM_MISMATCH")
+    expected = PC02_SHA256 if baseline_sha256 is None else baseline_sha256
+    if re.fullmatch(r"[0-9a-f]{64}", expected) is None or not hmac.compare_digest(digest(previous), expected):
+        raise AdminError("PC02_PACKAGE_CHECKSUM_MISMATCH" if baseline_sha256 is None else "BASELINE_PACKAGE_CHECKSUM_MISMATCH")
     members = zip_members(previous)
     with zipfile.ZipFile(io.BytesIO(previous)) as archive:
         if stat.S_IMODE(archive.getinfo("scf_bootstrap").external_attr >> 16) != 0o755:
@@ -57,15 +58,15 @@ def historical_package(historical: Path) -> tuple[bytes, dict[str, str]]:
     return previous, members
 
 
-def packages(candidate: Path, historical: Path) -> tuple[bytes, bytes, dict[str, str], dict[str, str]]:
-    """Pin PC02 bytes and require the candidate to match all current API source."""
+def packages(candidate: Path, historical: Path, *, baseline_sha256: str | None = None) -> tuple[bytes, bytes, dict[str, str], dict[str, str]]:
+    """Pin the authorized baseline and require the candidate to match current API source."""
     if candidate.resolve() == historical.resolve():
         raise AdminError("CANDIDATE_AND_HISTORY_MUST_DIFFER")
     evidence = validate_package(candidate)
     forward = read_zip(candidate)
     if digest(forward) != evidence.get("zip_sha256"):
         raise AdminError("PACKAGE_CHANGED_AFTER_VALIDATION")
-    previous, previous_members = historical_package(historical)
+    previous, previous_members = historical_package(historical, baseline_sha256=baseline_sha256)
     forward_members = zip_members(forward)
     with zipfile.ZipFile(io.BytesIO(forward)) as archive:
         if stat.S_IMODE(archive.getinfo("scf_bootstrap").external_attr >> 16) != 0o755:
@@ -184,13 +185,13 @@ def freeze_approved_package(data: bytes) -> None:
     retain_zip(APPROVED_PACKAGES, data, digest(data))
 
 
-def verify_rollback_owner(current_members: dict, candidate: Path, historical: Path) -> None:
+def verify_rollback_owner(current_members: dict, candidate: Path, historical: Path, *, baseline_sha256: str | None = None) -> None:
     if any(current_members == members for _, members in approved_snapshots()):
         return
     # A current source-valid candidate is also allowed, for a verified manual
     # code upload. This is only a fallback; rollback never requires its presence.
     try:
-        forward, _, forward_members, _ = packages(candidate, historical)
+        forward, _, forward_members, _ = packages(candidate, historical, baseline_sha256=baseline_sha256)
     except AdminError:
         raise AdminError("ROLLBACK_OWNERSHIP_PROOF_UNAVAILABLE") from None
     if current_members != forward_members:
@@ -200,6 +201,7 @@ def verify_rollback_owner(current_members: dict, candidate: Path, historical: Pa
 
 def apply_deployment(admin: CloudAdmin, transport: ZipTransport, candidate: Path, historical: Path,
                      *, cloud_write_authorized: bool = False, rollback: bool = False,
+                     baseline_sha256: str | None = None,
                      now: Callable[[], float] = time.monotonic,
                      sleep: Callable[[float], None] = time.sleep) -> dict:
     if cloud_write_authorized is not True:
@@ -207,18 +209,18 @@ def apply_deployment(admin: CloudAdmin, transport: ZipTransport, candidate: Path
     if transport.admin is not admin:
         raise AdminError("DEPLOYMENT_TRANSPORT_MISMATCH")
     if rollback:
-        desired, desired_members = historical_package(historical)
+        desired, desired_members = historical_package(historical, baseline_sha256=baseline_sha256)
         forward = None
         forward_members = None
         previous_members = desired_members
     else:
-        forward, previous, forward_members, previous_members = packages(candidate, historical)
+        forward, previous, forward_members, previous_members = packages(candidate, historical, baseline_sha256=baseline_sha256)
         desired, desired_members = forward, forward_members
     baseline = verified_target(admin)
     current, current_hash = transport.download()
     current_members = zip_members(current)
     if rollback and current_members != previous_members:
-        verify_rollback_owner(current_members, candidate, historical)
+        verify_rollback_owner(current_members, candidate, historical, baseline_sha256=baseline_sha256)
     elif not rollback and current_members not in (forward_members, previous_members):
         if not any(current_members == members for _, members in approved_snapshots()):
             raise AdminError("CURRENT_CODE_NOT_OWNED")

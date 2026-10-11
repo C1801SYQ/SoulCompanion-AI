@@ -137,7 +137,7 @@ async function acceptance() {
     fixture: 'Synthetic community UI with owned loopback static server; no API fixture or cloud resources',
     checks: [], screenshots: [], responsive: [], privacy: {}, cleanup: [], limitations: [
       'WeChat physical devices and platform login are NOT TESTED; this runner uses Chromium H5 only',
-      'Real community publication/moderation are NOT IMPLEMENTED; no production data or cloud API is called',
+      'Real community publication/moderation are NOT TESTED by this static DEMO fixture; no production data or cloud API is called',
       'Media lifecycle and authenticated owner isolation also require the separate existing regression suites',
       'DOM/keyboard/motion checks are not a full screen-reader or WCAG conformance audit',
     ] };
