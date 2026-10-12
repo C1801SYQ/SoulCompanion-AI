@@ -59,7 +59,7 @@
 | AUTOMATED 软件 | PASS；本地可执行验收、独立审查和软件工作流通过 |
 | PC04 REAL CLOUD | PASS，官方 SDK + 真实页面 + 既有 CloudBase 合成闭环，21 检查 / 0 清理失败；不代表微信账户或手机通过 |
 | 官方 WXSS 语法 | PASS，实际调用本机 wcsc；不是整项目运行验收 |
-| PC04 WECHAT DEVTOOLS | PARTIAL：用户截图证明 PC04 REAL 社区页渲染；显示连接暂时中断及 1 个控制台错误，四入口/详情/投稿尚未完整验证 |
+| PC04 WECHAT DEVTOOLS | PARTIAL：用户截图及当前窗口读取证明 PC04 REAL 社区页渲染；Console 明确显示当前 API 不在 request 合法域名列表，网络配置 BLOCKED；修复后的四入口/详情/投稿尚未完整验证 |
 | CLI 桥接 | BLOCKED：前置读取的 `.ide-status`/`.ide` 文件缺失而报 disabled；本机 GUI 实际存在监听端口，不能据此推断 GUI 未登录或开关实际关闭。未伪造状态文件，用户无需重复登录 |
 | PHYSICAL DEVICE | NOT TESTED |
 | CloudBase 新资源 | NONE |
@@ -70,9 +70,11 @@
 
 回执 `PC04_ACCEPTANCE_PASS`：21 检查均 true，最多实际尝试 1 帖/1 评论/1 举报，cleanup_failures 0。合成内容已软撤回、举报已处理或确认不存在、关系关闭或父帖不公开、昵称恢复、临时 moderator 已撤销、签发令牌已撤销并验证。保留应有审计与撤回记录，没有物理删除历史数据。只含布尔检查与计数的安全回执位于忽略目录 `.test-artifacts/cloudbase-pc04/pc04-real-ui-acceptance.json`。该结果不会作为微信手机登录证据。
 
-2026-10-12 不带身份凭据的公开社区 GET 实际返回 HTTP 200、items 0，仅证明该公开端点在本机请求时正常。截图中的微信连接提示仍需对应控制台错误定位，不能据此认为用户未登录，也不能据此宣称微信请求通过。
+2026-10-12 不带身份凭据的公开社区 GET 实际返回 HTTP 200、items 0，仅证明该公开端点在本机请求时正常。用户随后提供 Console：Stable 2.02.2608080 / 基础库 3.17.4，00:47:10 明确拒绝 `https://soulcompanion-dev-d0dzo6f2a24211-1501181209.ap-shanghai.app.tcloudbase.com`，现有 request 合法域名只有旧 tcb.qcloud.la 域名与 tcb-api.tencentcloudapi.com。因此当前微信社区请求失败的实际原因已定位为服务器域名配置缺项，不是登录或 WXSS 问题。
 
-微信登录开发者工具不等于小程序 CloudBase 登录，也不等于 CLI 服务端口可连接。当前工具无法直接查看/点击原生微信窗口，截图只能证明当时画面。后续按 [微信人工清单](PC04_WECHAT_MANUAL_CHECKLIST.md) 验证，不重复要求用户登录。
+除该 API origin，官方 SDK 3.10.1 默认 GATEWAY 模式及现有 `signInWithOpenId({useWxCloud:false})` 还需要 `https://soulcompanion-dev-d0dzo6f2a24211.api.tcloudbasegateway.com`。第二项由已安装官方 SDK/微信适配器源码核对，不冒充已取得微信登录结果。管理员需在既有 AppID 的 request 合法域名中保留旧项并添加这两项，然后刷新开发者工具“详情 → 域名信息”并重新编译，保持 `urlCheck:true`。当前 6 个分包及按需组件加载已有运行日志证据；弃用、灰度基础库及 preload 警告没有造成该域名拒绝的证据。不修改业务代码或将 API 切换到未经验证的旧域名。
+
+本轮 computer-use 已实际读取原生开发者工具窗口，修正此前“无法直接查看”的工具能力判断；一次菜单点击返回 unknown screenshotId，不计为成功操作。CLI 状态文件缺失与 GUI 登录是两个问题。浏览器安全策略禁止访问微信公众平台管理站点，未执行域名配置写入；当前等待管理员配置和回测。微信登录开发者工具不等于小程序 CloudBase 登录，也不等于 CLI 可连接。后续按 [微信人工清单](PC04_WECHAT_MANUAL_CHECKLIST.md) 验证，无需重复登录开发者工具。
 
 ## 包体、依赖与费用
 
@@ -82,6 +84,6 @@
 
 ## 收尾与停止边界
 
-软件、工具审查、授权范围内的真实 UI/清理和回执文档推送已完成。最终记录提交的远端一致性与 CI 结果在交付回复中给出。微信完整人工运行、截图中的具体网络错误及手机验证仍按清单等待用户；不会将这些项目写成 PASS。
+软件、工具审查、授权范围内的真实 UI/清理和回执文档推送已完成。最终记录提交的远端一致性与 CI 结果在交付回复中给出。微信网络错误原因已定位；域名配置后的完整人工运行、真实微信登录及手机验证仍按清单等待用户，不会将这些项目写成 PASS。
 
 长期运营人员、微信真实账户/设备与扫码验收仍需用户准备。未指定真实审核员时不授予长期角色。PC05 需 PC04 完整交付与明确后续授权；当前不创建 PC05、不开发 AI、不发布微信、不切 Cloudflare Production、不合并 master。

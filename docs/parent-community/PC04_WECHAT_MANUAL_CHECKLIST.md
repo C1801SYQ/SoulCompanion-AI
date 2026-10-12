@@ -1,6 +1,6 @@
 # PC04 微信与受限运营人工验收
 
-当前标记：**MANUAL_VERIFICATION_REQUIRED / NOT TESTED**。官方 `wcsc` 语法检查与 Taro 构建已通过；尚不代表整项目 DevTools 或手机通过。PC02 历史人工编译确认不能代替 PC04。
+当前标记：**DevTools PARTIAL / 网络配置 BLOCKED / 手机 NOT TESTED**。官方 `wcsc` 语法检查与 Taro 构建已通过；尚不代表整项目 DevTools 或手机通过。PC02 历史人工编译确认不能代替 PC04。
 
 ## 本机开发者工具
 
@@ -8,9 +8,29 @@
 
 进一步只读诊断：当前工具进程实际监听本机端口；CLI 源码在连接前读取 `global.userDirPath/.ide-status`，只有内容为 `On` 才继续。其当前 Local 配置目录只有新写入的 `.cli`，缺 `.ide-status` 和 `.ide`；显式传 `--port` 也在同一前置判断退出。因此这条错误表示 CLI 所需状态文件缺失，不能据此断言 GUI 没登录或安全设置实际关闭。尚未证明具体 GUI/CLI 目录迁移机制，不手工伪造状态文件或关闭安全校验。整项目 CLI 自动验收仍 NOT TESTED；可继续用户手动编译及运行。若工具要求 CLI 访问令牌，通过私有环境变量配置，不发到聊天或 Git。
 
-2026-10-12 本机匿名请求既有公开社区 API 返回 HTTP 200、空列表；截图中的微信连接提示不能归因于账号未登录。微信专属网络或配置原因需要对应控制台错误文字，当前未定位，不虚报已修复。
+2026-10-12 本机匿名请求既有公开社区 API 返回 HTTP 200、空列表。用户提供的 DevTools Console 已定位微信请求失败原因：00:47:10 的 `request 合法域名校验出错` 明确拒绝当前 API origin。不是登录失败或 WXSS 语法失败。
 
-1. 导入 `apps/client` 项目（miniprogramRoot 指向 `dist-weapp`），重新构建后点击编译，记录工具版本和基础库版本。
+### 已确认的域名配置阻塞
+
+工具版本 Stable 2.02.2608080，基础库 3.17.4（灰度版）。Console 列出的现有 request 合法域名仅为 `https://736f-soulcompanion-dev-d0dzo6f2a24211-1501181209.tcb.qcloud.la` 与 `https://tcb-api.tencentcloudapi.com`，不包含被拒绝的 API origin。未证明前者映射当前 FastAPI，不修改客户端 URL 来绕过校验。
+
+| 应加入的 HTTPS origin | 依据 |
+| --- | --- |
+| `https://soulcompanion-dev-d0dzo6f2a24211-1501181209.ap-shanghai.app.tcloudbase.com` | Console 明确拒绝；`community/transport.ts` 经 `Taro.request` 请求此 origin 下的 `/api/v2` |
+| `https://soulcompanion-dev-d0dzo6f2a24211.api.tcloudbasegateway.com` | 已安装官方 CloudBase SDK 3.10.1 的默认 GATEWAY 认证入口；现有 `signInWithOpenId({useWxCloud:false})` 使用 HTTPS，微信适配器通过 `wx.request` 发送。此项是源码核对所得的登录配置要求，尚无实际微信登录通过证据 |
+
+1. 在微信公众平台确认目标小程序 AppID 为 `wx11a055ed4dc69764`，打开“开发管理 → 开发设置 → 服务器域名 → request 合法域名”。保留现有域名，添加上表两项；只填 origin，不附带 `/api/v2` 或其他路径。
+2. 保存后，在开发者工具“详情 → 域名信息”刷新配置，再点击“编译”。`apps/client/project.config.json` 的 `urlCheck:true` 必须保留；关闭校验的结果不能计为验收通过。
+3. 先只读检查公开社区连接和四入口、详情、投稿预览/返回编辑；本轮不产生真实社区写入。记录是否仍有域名错误及实际页面结果。配置尚未完成或仍失败时保留 BLOCKED。
+4. 只读页面通过后，再按独立授权边界验证微信登录、账户隔离与手机行为；既有 H5 合成验收授权不自动覆盖真实微信账户写入。
+
+基础库日志已显示 6 个分包、LazyCodeLoading 与按需组件注入启用。`wx.getSystemInfoSync` 弃用提示可对应官方微信适配器的兼容探测；灰度基础库和本机脚本 preload 提示尚无造成当前失败的证据。它们不能代替明确的合法域名错误，也不据此全局改样式或升级 SDK。
+
+本轮已通过 computer-use 读取当前开发者工具窗口，确认 REAL 社区仍显示连接中断；一次窗口菜单点击被工具拒绝（unknown screenshotId），未作为操作成功证据。原“无法直接查看原生窗口”的说法已更正。CLI 状态文件缺失仍是独立问题。浏览器安全策略禁止访问微信公众平台管理站点，未执行管理后台配置写入，需管理员按上面步骤完成。未新增 CloudBase 资源、更新函数或修改费用设置。域名修复后的 DevTools 网络与真实微信登录目前均未验证。
+
+历史配置说明见 [MANUAL_ACTIONS](../v2/MANUAL_ACTIONS.md)，微信网络规则入口见 [官方网络文档](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html)。
+
+1. 导入 `apps/client` 项目（miniprogramRoot 指向 `dist-weapp`），先完成上述域名配置与刷新，重新构建后点击编译，记录工具版本和基础库版本。
 2. 查看主包/分包检查与组件按需注入；普通分包保留原家庭工具及运营路径。
 3. 社区、育儿知识、成长记录、我的切换；详情返回保留筛选，REAL 明确刷新到列表顶部，DEMO 保留原滚动行为。
 4. 检查投稿输入、预览、返回编辑、键盘遮挡和底部安全区域；未登录可以读公开内容，不能假装发布。
